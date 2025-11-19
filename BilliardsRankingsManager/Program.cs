@@ -426,12 +426,12 @@ namespace BilliardsRankingsManager
                 };
                 Grid.SetColumn(rankLabel, 0);
 
-                var nameBox = new TextBox
-                {
-                    FontSize = 13, // Reduced from 16
-                    Padding = new Thickness(3), // Reduced from 8
-                    Margin = new Thickness(5, 0, 0, 0)
-                };
+                var nameBox = CreateSelectAllTextBox();
+                nameBox.FontSize = 13;
+                nameBox.Padding = new Thickness(5);
+                nameBox.Margin = new Thickness(5, 0, 0, 0);
+
+
                 nameBox.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding("PlayerName")
                 {
                     Source = Rankings[i],
@@ -470,10 +470,10 @@ namespace BilliardsRankingsManager
             // Export Settings Section
             stack.Children.Add(CreateSectionHeader("Export Settings"));
 
-            stack.Children.Add(CreateNumberSetting("Width (px):", Settings.ExportWidth,
-                v => { Settings.ExportWidth = v; SaveSettings(); }));
-            stack.Children.Add(CreateNumberSetting("Height (px):", Settings.ExportHeight,
-                v => { Settings.ExportHeight = v; SaveSettings(); }));
+            stack.Children.Add(CreateSliderSetting("Width (px):", Settings.ExportWidth, 100, 1920,
+                v => { Settings.ExportWidth = v; SaveSettings(); }, 5));
+            stack.Children.Add(CreateSliderSetting("Height (px):", Settings.ExportHeight, 100, 1080,
+                v => { Settings.ExportHeight = v; SaveSettings(); }, 5));
 
             // Logo Settings Section
             stack.Children.Add(CreateSectionHeader("Logo"));
@@ -689,6 +689,23 @@ namespace BilliardsRankingsManager
             };
         }
 
+        private TextBox CreateSelectAllTextBox()
+        {
+            var textBox = new TextBox();
+
+            textBox.GotKeyboardFocus += (s, e) => textBox.SelectAll();
+            textBox.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                if (!textBox.IsKeyboardFocusWithin)
+                {
+                    e.Handled = true;
+                    textBox.Focus();
+                }
+            };
+
+            return textBox;
+        }
+
 
         private TextBlock CreateSectionHeader(string text)
         {
@@ -723,7 +740,7 @@ namespace BilliardsRankingsManager
             return panel;
         }
 
-        private StackPanel CreateSliderSetting(string label, int defaultValue, int min, int max, Action<int> onChange)
+        private StackPanel CreateSliderSetting(string label, int defaultValue, int min, int max, Action<int> onChange, int tick = 1)
         {
             var panel = new StackPanel { Margin = new Thickness(0, 5, 0, 5) };
 
@@ -758,7 +775,7 @@ namespace BilliardsRankingsManager
                 Maximum = max,
                 Value = defaultValue,
                 Margin = new Thickness(0, 5, 0, 0),
-                TickFrequency = 1,
+                TickFrequency = tick,
                 IsSnapToTickEnabled = true
             };
 
