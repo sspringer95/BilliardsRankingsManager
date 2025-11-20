@@ -144,6 +144,28 @@ namespace BilliardsRankingsManager
         private string _titleText = "TOP 20 RANKINGS";
         private string _fontFamily = StyleConfig.DefaultFontFamily;
         private RankFormat _rankFormat = RankFormat.NumberDot;
+        private int[] _customColors = new int[16];
+        private int _playerCount = 20;
+        private int _titleFontSize = 48;
+
+
+        public int TitleFontSize
+        {
+            get => _titleFontSize;
+            set { _titleFontSize = value; OnPropertyChanged(); }
+        }
+
+        public int PlayerCount
+        {
+            get => _playerCount;
+            set { _playerCount = value; OnPropertyChanged(); }
+        }
+
+        public int[] CustomColors
+        {
+            get => _customColors;
+            set { _customColors = value; OnPropertyChanged(); }
+        }
 
         public string ExportPath
         {
@@ -395,32 +417,133 @@ namespace BilliardsRankingsManager
             Content = mainGrid;
         }
 
+        private void SwapRankings(int index1, int index2)
+        {
+            if (index1 < 0 || index1 >= 50 || index2 < 0 || index2 >= 50)
+                return;
+
+            var temp = Rankings[index1].PlayerName;
+            Rankings[index1].PlayerName = Rankings[index2].PlayerName;
+            Rankings[index2].PlayerName = temp;
+        }
+
+        private List<Button> _downButtons = new List<Button>();
+
         private ScrollViewer CreateRankingsPanel()
         {
-            var stack = new StackPanel { Margin = new Thickness(15) }; // Reduced from 20
+            var stack = new StackPanel { Margin = new Thickness(15) };
 
-            var title = new TextBlock
+            // Create error popup
+            var errorPopup = new System.Windows.Controls.Primitives.Popup
             {
-                Text = "Player Rankings",
-                FontSize = 18, // Reduced from 24
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 10), // Reduced from 20
-                Foreground = StyleConfig.UIAccent
+                Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+                StaysOpen = false,
+                Opacity = 0.8
+                
             };
-            stack.Children.Add(title);
 
-            // Create 20 ranking entries
-            for (int i = 0; i < 20; i++)
+            var errorText = new TextBlock
             {
-                var entryGrid = new Grid { Margin = new Thickness(0, 2, 0, 2) }; // Reduced from 5
+                Text = "Please enter a number between 1 and 50",
+                Background = Brushes.LightYellow,
+                Padding = new Thickness(2),
+                FontSize = 16
+            };
+
+            var errorBorder = new Border
+            {
+                Child = errorText,
+                BorderBrush = Brushes.Gray,
+                BorderThickness = new Thickness(1),
+                Background = Brushes.LightYellow
+            };
+
+            errorPopup.Child = errorBorder;
+
+            var titleFontSize = 15;
+
+            // Title with player count input
+            var titlePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+
+            titlePanel.Children.Add(new TextBlock
+            {
+                Text = "List of  ",
+                FontSize = titleFontSize,
+                FontWeight = FontWeights.Bold,
+                Foreground = StyleConfig.UIAccent,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            var countBox = CreateSelectAllTextBox();
+            countBox.Text = Settings.PlayerCount.ToString();
+            countBox.Width = 40;
+            countBox.FontSize = 18;
+            countBox.FontWeight = FontWeights.Bold;
+            countBox.Padding = new Thickness(5, 2, 5, 2);
+            countBox.TextAlignment = TextAlignment.Center;
+
+            errorPopup.PlacementTarget = countBox;
+
+            countBox.TextChanged += (s, e) =>
+            {
+                if (int.TryParse(countBox.Text, out int value))
+                {
+                    if (value >= 1 && value <= 50)
+                    {
+                        Settings.PlayerCount = value;
+                        SaveSettings();
+                        UpdateVisibleRankings();
+                        errorPopup.IsOpen = false;
+                    }
+                    else
+                    {
+                        countBox.Text = "";
+                        errorPopup.IsOpen = true;
+
+                        // Auto-hide after 3 seconds
+                        var timer = new System.Windows.Threading.DispatcherTimer
+                        {
+                            Interval = TimeSpan.FromSeconds(2)
+                        };
+                        timer.Tick += (t, args) =>
+                        {
+                            errorPopup.IsOpen = false;
+                            timer.Stop();
+                        };
+                        timer.Start();
+                    }
+                }
+            };
+            titlePanel.Children.Add(countBox);
+
+            titlePanel.Children.Add(new TextBlock
+            {
+                Text = " players",
+                FontSize = titleFontSize,
+                FontWeight = FontWeights.Bold,
+                Foreground = StyleConfig.UIAccent,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            stack.Children.Add(titlePanel);
+
+            // Clear previous entries
+            _rankingEntryGrids.Clear();
+            _downButtons.Clear();
+
+            // Create 50 ranking entries
+            for (int i = 0; i < 50; i++)
+            {
+                var entryGrid = new Grid { Margin = new Thickness(0, 2, 0, 2) };
                 entryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 entryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                entryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var rankLabel = new TextBlock
                 {
                     Text = $"{i + 1}.",
-                    Width = 30, // Reduced from 40
-                    FontSize = 12, // Reduced from 16
+                    Width = 30,
+                    FontSize = 13,
                     FontWeight = FontWeights.Bold,
                     VerticalAlignment = VerticalAlignment.Center
                 };
@@ -429,9 +552,7 @@ namespace BilliardsRankingsManager
                 var nameBox = CreateSelectAllTextBox();
                 nameBox.FontSize = 13;
                 nameBox.Padding = new Thickness(5);
-                nameBox.Margin = new Thickness(5, 0, 0, 0);
-
-
+                nameBox.Margin = new Thickness(5, 0, 5, 0);
                 nameBox.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding("PlayerName")
                 {
                     Source = Rankings[i],
@@ -440,8 +561,50 @@ namespace BilliardsRankingsManager
                 });
                 Grid.SetColumn(nameBox, 1);
 
+                // Up/Down buttons
+                var buttonPanel = new StackPanel { Orientation = Orientation.Horizontal };
+
+                int index = i;
+
+                var upBtn = new Button
+                {
+                    Content = "▲",
+                    Width = 22,
+                    Height = 22,
+                    FontSize = 10,
+                    Padding = new Thickness(0),
+                    Margin = new Thickness(0, 0, 2, 0),
+                    IsEnabled = i > 0,
+                    IsTabStop = false
+                };
+                upBtn.Click += (s, e) => SwapRankings(index, index - 1);
+
+                var downBtn = new Button
+                {
+                    Content = "▼",
+                    Width = 22,
+                    Height = 22,
+                    FontSize = 10,
+                    Padding = new Thickness(0),
+                    IsEnabled = i < Settings.PlayerCount - 1,
+                    IsTabStop = false
+                };
+                downBtn.Click += (s, e) => SwapRankings(index, index + 1);
+
+                _downButtons.Add(downBtn);
+
+                buttonPanel.Children.Add(upBtn);
+                buttonPanel.Children.Add(downBtn);
+                Grid.SetColumn(buttonPanel, 2);
+
                 entryGrid.Children.Add(rankLabel);
                 entryGrid.Children.Add(nameBox);
+                entryGrid.Children.Add(buttonPanel);
+
+                // Set initial visibility
+                entryGrid.Visibility = i < Settings.PlayerCount ? Visibility.Visible : Visibility.Collapsed;
+
+                _rankingEntryGrids.Add(entryGrid);
                 stack.Children.Add(entryGrid);
             }
 
@@ -452,30 +615,76 @@ namespace BilliardsRankingsManager
             };
         }
 
+        private List<Grid> _rankingEntryGrids = new List<Grid>();
+        private void UpdateVisibleRankings()
+        {
+            for (int i = 0; i < _rankingEntryGrids.Count; i++)
+            {
+                _rankingEntryGrids[i].Visibility = i < Settings.PlayerCount 
+                    ? Visibility.Visible 
+                    : Visibility.Collapsed;
+        
+                // Update down button enabled state
+                if (i < _downButtons.Count)
+                {
+                    _downButtons[i].IsEnabled = i < Settings.PlayerCount - 1;
+                }
+            }
+        }
+
+        private Separator CreateDivider()
+        {
+            return new Separator
+            {
+                Margin = new Thickness(0, 20, 0, 15),
+                Background = new SolidColorBrush(Color.FromRgb(200, 200, 200))
+            };
+        }
+
         private ScrollViewer CreateSettingsPanel()
         {
-            var stack = new StackPanel { Margin = new Thickness(15) }; // Reduced from 20
+            var stack = new StackPanel { Margin = new Thickness(15) };
 
             // Settings Title
             var title = new TextBlock
             {
                 Text = "Settings & Export",
-                FontSize = 18, // Reduced from 20
+                FontSize = 18,
                 FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 15), // Reduced from 20
+                Margin = new Thickness(0, 0, 0, 15),
                 Foreground = StyleConfig.UIAccent
             };
             stack.Children.Add(title);
 
-            // Export Settings Section
-            stack.Children.Add(CreateSectionHeader("Export Settings"));
+            // Export Section
+            stack.Children.Add(CreateSectionHeader("Export"));
 
-            stack.Children.Add(CreateSliderSetting("Width (px):", Settings.ExportWidth, 100, 1920,
-                v => { Settings.ExportWidth = v; SaveSettings(); }, 5));
-            stack.Children.Add(CreateSliderSetting("Height (px):", Settings.ExportHeight, 100, 1080,
-                v => { Settings.ExportHeight = v; SaveSettings(); }, 5));
+            var locationBtn = CreateButton("Set Export Location", SetExportLocation_Click);
+            locationBtn.Margin = new Thickness(0, 0, 0, 5);
+            stack.Children.Add(locationBtn);
 
-            // Logo Settings Section
+            var locationStatus = new TextBlock
+            {
+                Text = string.IsNullOrEmpty(Settings.ExportPath) ? "No location set" : Settings.ExportPath,
+                Margin = new Thickness(0, 0, 0, 10),
+                FontSize = 11,
+                FontStyle = FontStyles.Italic,
+                TextWrapping = TextWrapping.Wrap
+            };
+            locationStatus.Name = "LocationStatus";
+            stack.Children.Add(locationStatus);
+
+            var previewBtn = CreateButton("Preview", (s, e) => _ = ShowPreview(), isPrimary: false);
+            previewBtn.Name = "PreviewButton";
+            stack.Children.Add(previewBtn);
+
+            var pngBtn = CreateButton("Generate PNG", (s, e) => _ = ExportToPNG(), isPrimary: true);
+            pngBtn.Margin = new Thickness(0, 10, 0, 0);
+            stack.Children.Add(pngBtn);
+
+            stack.Children.Add(CreateDivider());
+
+            // Logo Section
             stack.Children.Add(CreateSectionHeader("Logo"));
 
             var logoBtn = CreateButton("Browse for Logo", BrowseLogo_Click);
@@ -496,18 +705,56 @@ namespace BilliardsRankingsManager
             stack.Children.Add(CreateSliderSetting("Logo Size:", Settings.LogoHeight, 50, 250,
                 v => { Settings.LogoHeight = v; SaveSettings(); }));
 
-            stack.Children.Add(CreateSliderSetting("Logo-Title Spacing:", Settings.LogoTitleSpacing, 20, 100,
-                v => { Settings.LogoTitleSpacing = v; SaveSettings(); }));
 
-            // Title Settings Section
-            stack.Children.Add(CreateSectionHeader("Title"));
+            stack.Children.Add(CreateDivider());
 
-            var titlePanel = new StackPanel { Margin = new Thickness(0, 5, 0, 10) };
-            titlePanel.Children.Add(new TextBlock { Text = "Title Text:", FontWeight = FontWeights.SemiBold, FontSize = 12 });
+            // Background Section (collapsible)
+            var backgroundExpander = new Expander
+            {
+                Header = "Background (Size & Colors)",
+                IsExpanded = false,
+                Margin = new Thickness(0, 5, 0, 5),
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13
+            };
+
+            var backgroundStack = new StackPanel();
+
+            backgroundStack.Children.Add(CreateSliderSetting("Width (px):", Settings.ExportWidth, 100, 1920,
+                v => { Settings.ExportWidth = v; SaveSettings(); }, 5));
+            backgroundStack.Children.Add(CreateSliderSetting("Height (px):", Settings.ExportHeight, 100, 1920,
+                v => { Settings.ExportHeight = v; SaveSettings(); }, 5));
+            backgroundStack.Children.Add(CreateColorSetting("Background:", Settings.BackgroundColor,
+                c => { Settings.BackgroundColor = c; SaveSettings(); }));
+            backgroundStack.Children.Add(CreateColorSetting("Border:", Settings.BorderColor,
+                c => { Settings.BorderColor = c; SaveSettings(); }));
+
+            backgroundExpander.Content = backgroundStack;
+            stack.Children.Add(backgroundExpander);
+
+
+
+            stack.Children.Add(CreateDivider());
+
+            // Text Section (collapsible)
+            var textExpander = new Expander
+            {
+                Header = "Text (Size, Color, and outline)",
+                IsExpanded = false,
+                Margin = new Thickness(0, 5, 0, 5),
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13
+            };
+
+            var textStack = new StackPanel();
+
+            // Title Text input
+            var titleTextPanel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
+            titleTextPanel.Children.Add(new TextBlock { Text = "Title Text:", FontWeight = FontWeights.SemiBold, FontSize = 12 });
             var titleBox = new TextBox
             {
                 Text = Settings.TitleText,
-                Margin = new Thickness(0, 5, 0, 0),
+                Margin = new Thickness(0, 3, 0, 0),
                 Padding = new Thickness(5)
             };
             titleBox.TextChanged += (s, e) =>
@@ -515,95 +762,28 @@ namespace BilliardsRankingsManager
                 Settings.TitleText = titleBox.Text;
                 SaveSettings();
             };
-            titlePanel.Children.Add(titleBox);
-            stack.Children.Add(titlePanel);
+            titleTextPanel.Children.Add(titleBox);
+            textStack.Children.Add(titleTextPanel);
 
- 
-            // Layout Settings Section
-            stack.Children.Add(CreateSectionHeader("Layout"));
-
-            // Colors Section - Collapsible
-            var colorsExpander = new Expander
-            {
-                Header = "Colors",
-                IsExpanded = false,
-                Margin = new Thickness(0, 15, 0, 10),
-                FontWeight = FontWeights.Regular,
-                FontSize = 14
-            };
-
-            var colorsStack = new StackPanel();
-            colorsStack.Children.Add(CreateColorSetting("Background:", Settings.BackgroundColor,
-                c => { Settings.BackgroundColor = c; SaveSettings(); }));
-            colorsStack.Children.Add(CreateColorSetting("Border:", Settings.BorderColor,
-                c => { Settings.BorderColor = c; SaveSettings(); }));
-            colorsStack.Children.Add(CreateColorSetting("Title Text:", Settings.TitleTextColor,
+            textStack.Children.Add(CreateSliderSetting("Title Font Size:", Settings.TitleFontSize, 24, 72,
+                v => { Settings.TitleFontSize = v; SaveSettings(); }));
+            textStack.Children.Add(CreateColorSetting("Title Color:", Settings.TitleTextColor,
                 c => { Settings.TitleTextColor = c; SaveSettings(); }));
-            colorsStack.Children.Add(CreateColorSetting("Player Text:", Settings.PlayerTextColor,
+
+            textStack.Children.Add(CreateSliderSetting("Player Name Font Size:", Settings.FontSize, 12, 48,
+                v => { Settings.FontSize = v; SaveSettings(); }));
+            textStack.Children.Add(CreateColorSetting("Player Text Color:", Settings.PlayerTextColor,
                 c => { Settings.PlayerTextColor = c; SaveSettings(); }));
-            colorsStack.Children.Add(CreateColorSetting("Rank Numbers:", Settings.RankNumberColor,
+            textStack.Children.Add(CreateColorSetting("Rank Number Color:", Settings.RankNumberColor,
                 c => { Settings.RankNumberColor = c; SaveSettings(); }));
 
-            colorsExpander.Content = colorsStack;
-            stack.Children.Add(colorsExpander);
-
-            // Margin/padding Section - Collapsible
-            var paddingExpander = new Expander
-            {
-                Header = "Margins",
-                IsExpanded = false,
-                Margin = new Thickness(0, 15, 0, 10),
-                FontWeight = FontWeights.Regular,
-                FontSize = 14
-            };
-
-            var marginStack = new StackPanel();
-            marginStack.Children.Add(CreateNumberSetting("Margin Top:", Settings.PaddingTop,
-                v => { Settings.PaddingTop = v; SaveSettings(); }));
-            marginStack.Children.Add(CreateNumberSetting("Margin Bottom:", Settings.PaddingBottom,
-                v => { Settings.PaddingBottom = v; SaveSettings(); }));
-            marginStack.Children.Add(CreateNumberSetting("Margin Left:", Settings.PaddingLeft,
-                v => { Settings.PaddingLeft = v; SaveSettings(); }));
-            marginStack.Children.Add(CreateNumberSetting("Margin Right:", Settings.PaddingRight,
-                v => { Settings.PaddingRight = v; SaveSettings(); }));
-
-            paddingExpander.Content = marginStack;
-            stack.Children.Add(paddingExpander);
-
-            stack.Children.Add(CreateNumberSetting("Font Size:", Settings.FontSize,
-                v => { Settings.FontSize = v; SaveSettings(); }));
-            stack.Children.Add(CreateNumberSetting("Spacing:", Settings.Spacing,
-                v => { Settings.Spacing = v; SaveSettings(); }));
-
-
-
-            // Text Outline Section
-            stack.Children.Add(CreateSectionHeader("Text Outline"));
-
-            var outlineCheckPanel = new StackPanel { Margin = new Thickness(0, 5, 0, 10) };
-            var outlineCheck = new CheckBox
-            {
-                Content = "Enable Text Outline",
-                IsChecked = Settings.HasTextOutline
-            };
-            outlineCheck.Checked += (s, e) => { Settings.HasTextOutline = true; SaveSettings(); };
-            outlineCheck.Unchecked += (s, e) => { Settings.HasTextOutline = false; SaveSettings(); };
-            outlineCheckPanel.Children.Add(outlineCheck);
-            stack.Children.Add(outlineCheckPanel);
-
-            stack.Children.Add(CreateColorSetting("Outline Color:", Settings.OutlineColor,
-                c => { Settings.OutlineColor = c; SaveSettings(); }));
-            stack.Children.Add(CreateSliderSetting("Outline Width:", Settings.OutlineWidth, 1, 10,
-                v => { Settings.OutlineWidth = v; SaveSettings(); }));
-
-
             // Font Family
-            var fontPanel = new StackPanel { Margin = new Thickness(0, 10, 0, 10) };
+            var fontPanel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
             fontPanel.Children.Add(new TextBlock { Text = "Font Family:", FontWeight = FontWeights.SemiBold, FontSize = 12 });
             var fontBox = new TextBox
             {
                 Text = Settings.FontFamily,
-                Margin = new Thickness(0, 5, 0, 0),
+                Margin = new Thickness(0, 3, 0, 0),
                 Padding = new Thickness(5)
             };
             fontBox.TextChanged += (s, e) =>
@@ -612,15 +792,15 @@ namespace BilliardsRankingsManager
                 SaveSettings();
             };
             fontPanel.Children.Add(fontBox);
-            stack.Children.Add(fontPanel);
+            textStack.Children.Add(fontPanel);
 
             // Rank Format Dropdown
-            var rankFormatPanel = new StackPanel { Margin = new Thickness(0, 10, 0, 10) };
+            var rankFormatPanel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
             rankFormatPanel.Children.Add(new TextBlock { Text = "Rank Format:", FontWeight = FontWeights.SemiBold, FontSize = 12 });
 
             var rankFormatCombo = new ComboBox
             {
-                Margin = new Thickness(0, 5, 0, 0),
+                Margin = new Thickness(0, 3, 0, 0),
                 Padding = new Thickness(5)
             };
 
@@ -653,34 +833,80 @@ namespace BilliardsRankingsManager
             };
 
             rankFormatPanel.Children.Add(rankFormatCombo);
-            stack.Children.Add(rankFormatPanel);
+            textStack.Children.Add(rankFormatPanel);
 
-            // Export Location Section
-            stack.Children.Add(CreateSectionHeader("Export"));
-
-            var locationBtn = CreateButton("Set Export Location", SetExportLocation_Click);
-            locationBtn.Margin = new Thickness(0, 0, 0, 5);
-            stack.Children.Add(locationBtn);
-
-            var locationStatus = new TextBlock
+            // Text Outline - with hideable options
+            var outlineCheckPanel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
+            var outlineCheck = new CheckBox
             {
-                Text = string.IsNullOrEmpty(Settings.ExportPath) ? "No location set" : Settings.ExportPath,
-                Margin = new Thickness(0, 0, 0, 15),
-                FontSize = 11,
-                FontStyle = FontStyles.Italic,
-                TextWrapping = TextWrapping.Wrap
+                Content = "Enable Text Outline",
+                IsChecked = Settings.HasTextOutline
             };
-            locationStatus.Name = "LocationStatus";
-            stack.Children.Add(locationStatus);
+            outlineCheckPanel.Children.Add(outlineCheck);
+            textStack.Children.Add(outlineCheckPanel);
 
-            // Export Buttons
-            var previewBtn = CreateButton("Preview", (s, e) => _ = ShowPreview(), isPrimary: false);
-            previewBtn.Name = "PreviewButton";
-            stack.Children.Add(previewBtn);
+            // Outline options (hidden by default)
+            var outlineOptionsPanel = new StackPanel
+            {
+                Visibility = Settings.HasTextOutline ? Visibility.Visible : Visibility.Collapsed,
+                Margin = new Thickness(15, 0, 0, 0) // Indented
+            };
 
-            var pngBtn = CreateButton("Generate PNG", (s, e) => _ = ExportToPNG(), isPrimary: true);
-            pngBtn.Margin = new Thickness(0, 10, 0, 0);
-            stack.Children.Add(pngBtn);
+            outlineOptionsPanel.Children.Add(CreateColorSetting("Outline Color:", Settings.OutlineColor,
+                c => { Settings.OutlineColor = c; SaveSettings(); }));
+            outlineOptionsPanel.Children.Add(CreateSliderSetting("Outline Width:", Settings.OutlineWidth, 1, 10,
+                v => { Settings.OutlineWidth = v; SaveSettings(); }));
+
+            outlineCheck.Checked += (s, e) =>
+            {
+                Settings.HasTextOutline = true;
+                SaveSettings();
+                outlineOptionsPanel.Visibility = Visibility.Visible;
+            };
+            outlineCheck.Unchecked += (s, e) =>
+            {
+                Settings.HasTextOutline = false;
+                SaveSettings();
+                outlineOptionsPanel.Visibility = Visibility.Collapsed;
+            };
+
+            textStack.Children.Add(outlineOptionsPanel);
+
+            textExpander.Content = textStack;
+            stack.Children.Add(textExpander);
+
+
+            stack.Children.Add(CreateDivider());
+
+            // Spacing & Margins Section (collapsible)
+            var spacingExpander = new Expander
+            {
+                Header = "Spacing & Margins",
+                IsExpanded = false,
+                Margin = new Thickness(0, 5, 0, 5),
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13
+            };
+
+            var spacingStack = new StackPanel();
+
+            spacingStack.Children.Add(CreateSliderSetting("Line Spacing:", Settings.Spacing, 20, 80,
+                v => { Settings.Spacing = v; SaveSettings(); }));
+            spacingStack.Children.Add(CreateSliderSetting("Spacing between logo and title:", Settings.LogoTitleSpacing, 0, 100,
+                v => { Settings.LogoTitleSpacing = v; SaveSettings(); }));
+            spacingStack.Children.Add(CreateNumberSetting("Margin Top:", Settings.PaddingTop,
+                v => { Settings.PaddingTop = v; SaveSettings(); }));
+            spacingStack.Children.Add(CreateNumberSetting("Margin Bottom:", Settings.PaddingBottom,
+                v => { Settings.PaddingBottom = v; SaveSettings(); }));
+            spacingStack.Children.Add(CreateNumberSetting("Margin Left:", Settings.PaddingLeft,
+                v => { Settings.PaddingLeft = v; SaveSettings(); }));
+            spacingStack.Children.Add(CreateNumberSetting("Margin Right:", Settings.PaddingRight,
+                v => { Settings.PaddingRight = v; SaveSettings(); }));
+
+            spacingExpander.Content = spacingStack;
+            stack.Children.Add(spacingExpander);
+
+            // TODO: More sections to come
 
             return new ScrollViewer
             {
@@ -714,13 +940,13 @@ namespace BilliardsRankingsManager
                 Text = text,
                 FontSize = 14, // Reduced from 16
                 FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 12, 0, 8) // Reduced from 15,10
+                Margin = new Thickness(0, 8, 0, 5)
             };
         }
 
         private StackPanel CreateNumberSetting(string label, int defaultValue, Action<int> onChange)
         {
-            var panel = new StackPanel { Margin = new Thickness(0, 5, 0, 5) };
+            var panel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
             panel.Children.Add(new TextBlock { Text = label, FontWeight = FontWeights.SemiBold });
 
             var textBox = new TextBox
@@ -742,7 +968,7 @@ namespace BilliardsRankingsManager
 
         private StackPanel CreateSliderSetting(string label, int defaultValue, int min, int max, Action<int> onChange, int tick = 1)
         {
-            var panel = new StackPanel { Margin = new Thickness(0, 5, 0, 5) };
+            var panel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
 
             var headerGrid = new Grid();
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -792,7 +1018,7 @@ namespace BilliardsRankingsManager
 
         private StackPanel CreateColorSetting(string label, string currentColor, Action<string> onChange)
         {
-            var panel = new StackPanel { Margin = new Thickness(0, 5, 0, 5), Orientation = Orientation.Horizontal };
+            var panel = new StackPanel { Margin = new Thickness(0, 3, 0, 3), Orientation = Orientation.Horizontal };
 
             var labelText = new TextBlock
             {
@@ -847,7 +1073,8 @@ namespace BilliardsRankingsManager
                 var dialog = new System.Windows.Forms.ColorDialog
                 {
                     FullOpen = true,
-                    AnyColor = true
+                    AnyColor = true,
+                    CustomColors = Settings.CustomColors // Load saved custom colors
                 };
 
                 if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
@@ -857,6 +1084,10 @@ namespace BilliardsRankingsManager
                     onChange(currentColor);
                     updatePreview();
                 }
+
+                // Save custom colors regardless of OK/Cancel
+                Settings.CustomColors = dialog.CustomColors;
+                SaveSettings();
             };
 
             var transparentBtn = new Button
@@ -880,6 +1111,7 @@ namespace BilliardsRankingsManager
 
             return panel;
         }
+
 
         private Button CreateButton(string text, RoutedEventHandler handler, bool isPrimary = false)
         {
@@ -1059,7 +1291,7 @@ namespace BilliardsRankingsManager
             using var titlePaint = new SKPaint
             {
                 Color = ParseColor(Settings.TitleTextColor),
-                TextSize = StyleConfig.DefaultTitleFontSize,
+                TextSize = Settings.TitleFontSize,
                 IsAntialias = true,
                 Typeface = SKTypeface.FromFamilyName(Settings.FontFamily, SKFontStyle.Bold),
                 TextAlign = SKTextAlign.Center
@@ -1070,7 +1302,7 @@ namespace BilliardsRankingsManager
                 using var outlinePaint = new SKPaint
                 {
                     Color = ParseColor(Settings.OutlineColor),
-                    TextSize = StyleConfig.DefaultTitleFontSize,
+                    TextSize = Settings.TitleFontSize,
                     IsAntialias = true,
                     Typeface = SKTypeface.FromFamilyName(Settings.FontFamily, SKFontStyle.Bold),
                     TextAlign = SKTextAlign.Center,
@@ -1094,9 +1326,9 @@ namespace BilliardsRankingsManager
             currentY += 30;
 
             // Get active rankings
-            var activeRankings = Rankings.Where(r => !string.IsNullOrWhiteSpace(r.PlayerName))
-                                        .OrderBy(r => r.Rank)
-                                        .ToList();
+            var activeRankings = Rankings.Where(r => r.Rank <= Settings.PlayerCount && !string.IsNullOrWhiteSpace(r.PlayerName))
+                            .OrderBy(r => r.Rank)
+                            .ToList();
 
             if (activeRankings.Count == 0)
             {
@@ -1150,8 +1382,8 @@ namespace BilliardsRankingsManager
                 _previewWindow = new Window
                 {
                     Title = "Preview - Top 20 Rankings (Live)",
-                    Width = 900,
-                    Height = 700,
+                    Width = 1000,
+                    Height = 750,
                     WindowStartupLocation = WindowStartupLocation.CenterScreen
                 };
 
@@ -1485,7 +1717,7 @@ namespace BilliardsRankingsManager
             }
 
             // Ensure we have 20 entries
-            while (Rankings.Count < 20)
+            while (Rankings.Count < 50)
             {
                 Rankings.Add(new RankingEntry { Rank = Rankings.Count + 1, PlayerName = "" });
             }
