@@ -1,19 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Microsoft.Win32;
+using SkiaSharp;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using Microsoft.Win32;
-using SkiaSharp;
 
 namespace BilliardsRankingsManager
 {
@@ -144,7 +140,25 @@ namespace BilliardsRankingsManager
         private string _titleText = "TOP 20 RANKINGS";
         private string _fontFamily = StyleConfig.DefaultFontFamily;
         private RankFormat _rankFormat = RankFormat.NumberDot;
-        private int[] _customColors = new int[16];
+        private int[] _customColors = new int[16]
+        {
+            0xFFFFFF, // White
+            0xFF0000, // Red
+            0x00FF00, // Green
+            0x0000FF, // Blue
+            0xFFFF00, // Yellow
+            0xFF00FF, // Magenta
+            0x00FFFF, // Cyan
+            0x000000, // Black
+            0x808080, // Gray
+            0x800000, // Maroon
+            0x008000, // Dark Green
+            0x000080, // Navy
+            0x808000, // Olive
+            0x800080, // Purple
+            0x008080, // Teal
+            0xC0C0C0  // Silver
+        };
         private int _playerCount = 20;
         private int _titleFontSize = 48;
 
@@ -337,6 +351,10 @@ namespace BilliardsRankingsManager
         private System.Timers.Timer _saveTimer;
         private bool _isDirty = false;
 
+        private bool _settingsDirty = false;
+        private string _currentPresetName = null;
+        private ComboBox _presetComboBox = null; // Store reference to update it
+
         // Add these three new fields:
         private Window _previewWindow = null;
         private Image _previewImage = null;
@@ -391,7 +409,7 @@ namespace BilliardsRankingsManager
             // Subscribe to Settings changes for live preview
             Settings.PropertyChanged += (s, e) => TriggerPreviewUpdate();
         }
-        
+
 
         private void InitializeComponent()
         {
@@ -439,7 +457,7 @@ namespace BilliardsRankingsManager
                 Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
                 StaysOpen = false,
                 Opacity = 0.8
-                
+
             };
 
             var errorText = new TextBlock
@@ -620,10 +638,10 @@ namespace BilliardsRankingsManager
         {
             for (int i = 0; i < _rankingEntryGrids.Count; i++)
             {
-                _rankingEntryGrids[i].Visibility = i < Settings.PlayerCount 
-                    ? Visibility.Visible 
+                _rankingEntryGrids[i].Visibility = i < Settings.PlayerCount
+                    ? Visibility.Visible
                     : Visibility.Collapsed;
-        
+
                 // Update down button enabled state
                 if (i < _downButtons.Count)
                 {
@@ -641,22 +659,122 @@ namespace BilliardsRankingsManager
             };
         }
 
+        private void LoadPresetDialog()
+        {
+            var presetsFolder = GetPresetsFolder();
+
+            var dialog = new OpenFileDialog
+            {
+                Filter = "JSON Files|*.json",
+                Title = "Load Settings Preset",
+                InitialDirectory = presetsFolder
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                var presetName = Path.GetFileNameWithoutExtension(dialog.FileName);
+                LoadPresetFromFile(presetName);
+            }
+        }
+
+        private List<string> GetCommonFonts()
+        {
+            return new List<string>
+                {
+                    "Arial",
+                    "Arial Black",
+                    "Calibri",
+                    "Cambria",
+                    "Comic Sans MS",
+                    "Consolas",
+                    "Courier New",
+                    "Georgia",
+                    "Impact",
+                    "Lucida Console",
+                    "Lucida Sans Unicode",
+                    "Microsoft Sans Serif",
+                    "Palatino Linotype",
+                    "Segoe UI",
+                    "Tahoma",
+                    "Times New Roman",
+                    "Trebuchet MS",
+                    "Verdana",
+                    "Roboto",
+                    "Open Sans",
+                    "Montserrat",
+                    "Lato",
+                    "Oswald",
+                    "Raleway",
+                    "PT Sans"
+                };
+        }
+
         private ScrollViewer CreateSettingsPanel()
         {
             var stack = new StackPanel { Margin = new Thickness(15) };
 
             // Settings Title
-            var title = new TextBlock
-            {
-                Text = "Settings & Export",
-                FontSize = 18,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 15),
-                Foreground = StyleConfig.UIAccent
-            };
-            stack.Children.Add(title);
+            //var title = new TextBlock
+            //{
+            //    Text = "Settings",
+            //    FontSize = 18,
+            //    FontWeight = FontWeights.Bold,
+            //    Margin = new Thickness(0, 0, 0, 15),
+            //    Foreground = StyleConfig.UIAccent
+            //};
+            //stack.Children.Add(title);
+            stack.Children.Add(CreateSectionHeader("Presets (Save/Load)"));
 
-            // Export Section
+
+            // Presets Section
+            var presetPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 15)
+            };
+
+            var loadBtn = new Button
+            {
+                Content = "Load Preset",
+                Width = 90,
+                Padding = new Thickness(8, 4, 8, 4),
+                Margin = new Thickness(0, 0, 5, 0)
+            };
+
+            var saveBtn = new Button
+            {
+                Content = "Save Preset",
+                Width = 90,
+                Padding = new Thickness(8, 4, 8, 4)
+            };
+
+            loadBtn.Click += (s, e) =>
+            {
+                if (_settingsDirty)
+                {
+                    var result = MessageBox.Show(
+                        "Save current settings as a preset before loading?",
+                        "Unsaved Changes",
+                        MessageBoxButton.YesNoCancel,
+                        MessageBoxImage.Question);
+
+                    if (result == MessageBoxResult.Yes)
+                        SavePresetDialog();
+                    else if (result == MessageBoxResult.Cancel)
+                        return;
+                }
+
+                LoadPresetDialog();
+            };
+
+            saveBtn.Click += (s, e) => SavePresetDialog();
+
+            presetPanel.Children.Add(loadBtn);
+            presetPanel.Children.Add(saveBtn);
+
+            stack.Children.Add(presetPanel);
+
+            // Export Section (existing code continues...)
             stack.Children.Add(CreateSectionHeader("Export"));
 
             var locationBtn = CreateButton("Set Export Location", SetExportLocation_Click);
@@ -720,9 +838,9 @@ namespace BilliardsRankingsManager
 
             var backgroundStack = new StackPanel();
 
-            backgroundStack.Children.Add(CreateSliderSetting("Width (px):", Settings.ExportWidth, 100, 1920,
+            backgroundStack.Children.Add(CreateSliderSetting("Background Width (px):", Settings.ExportWidth, 100, 1920,
                 v => { Settings.ExportWidth = v; SaveSettings(); }, 5));
-            backgroundStack.Children.Add(CreateSliderSetting("Height (px):", Settings.ExportHeight, 100, 1920,
+            backgroundStack.Children.Add(CreateSliderSetting("Background Height (px):", Settings.ExportHeight, 100, 1920,
                 v => { Settings.ExportHeight = v; SaveSettings(); }, 5));
             backgroundStack.Children.Add(CreateColorSetting("Background:", Settings.BackgroundColor,
                 c => { Settings.BackgroundColor = c; SaveSettings(); }));
@@ -778,20 +896,58 @@ namespace BilliardsRankingsManager
                 c => { Settings.RankNumberColor = c; SaveSettings(); }));
 
             // Font Family
+            // Font Family Dropdown with Previews
             var fontPanel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
             fontPanel.Children.Add(new TextBlock { Text = "Font Family:", FontWeight = FontWeights.SemiBold, FontSize = 12 });
-            var fontBox = new TextBox
+
+            var fontCombo = new ComboBox
             {
-                Text = Settings.FontFamily,
                 Margin = new Thickness(0, 3, 0, 0),
-                Padding = new Thickness(5)
+                Padding = new Thickness(5),
+                MaxDropDownHeight = 300
             };
-            fontBox.TextChanged += (s, e) =>
+
+            var commonFonts = GetCommonFonts();
+            foreach (var fontName in commonFonts)
             {
-                Settings.FontFamily = fontBox.Text;
-                SaveSettings();
+                var item = new ComboBoxItem
+                {
+                    Content = fontName,
+                    FontFamily = new FontFamily(fontName),
+                    FontSize = 14
+                };
+                fontCombo.Items.Add(item);
+
+                // Select current font
+                if (fontName.Equals(Settings.FontFamily, StringComparison.OrdinalIgnoreCase))
+                {
+                    fontCombo.SelectedItem = item;
+                }
+            }
+
+            // If current font not in list, add it and select it
+            if (fontCombo.SelectedItem == null)
+            {
+                var customItem = new ComboBoxItem
+                {
+                    Content = Settings.FontFamily,
+                    FontFamily = new FontFamily(Settings.FontFamily),
+                    FontSize = 14
+                };
+                fontCombo.Items.Insert(0, customItem);
+                fontCombo.SelectedItem = customItem;
+            }
+
+            fontCombo.SelectionChanged += (s, e) =>
+            {
+                if (fontCombo.SelectedItem is ComboBoxItem selected)
+                {
+                    Settings.FontFamily = selected.Content.ToString();
+                    SaveSettings();
+                }
             };
-            fontPanel.Children.Add(fontBox);
+
+            fontPanel.Children.Add(fontCombo);
             textStack.Children.Add(fontPanel);
 
             // Rank Format Dropdown
@@ -836,7 +992,7 @@ namespace BilliardsRankingsManager
             textStack.Children.Add(rankFormatPanel);
 
             // Text Outline - with hideable options
-            var outlineCheckPanel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
+            var outlineCheckPanel = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
             var outlineCheck = new CheckBox
             {
                 Content = "Enable Text Outline",
@@ -968,7 +1124,7 @@ namespace BilliardsRankingsManager
 
         private StackPanel CreateSliderSetting(string label, int defaultValue, int min, int max, Action<int> onChange, int tick = 1)
         {
-            var panel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
+            var panel = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
 
             var headerGrid = new Grid();
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -1018,7 +1174,7 @@ namespace BilliardsRankingsManager
 
         private StackPanel CreateColorSetting(string label, string currentColor, Action<string> onChange)
         {
-            var panel = new StackPanel { Margin = new Thickness(0, 3, 0, 3), Orientation = Orientation.Horizontal };
+            var panel = new StackPanel { Margin = new Thickness(0, 5, 0, 5), Orientation = Orientation.Horizontal };
 
             var labelText = new TextBlock
             {
@@ -1052,7 +1208,26 @@ namespace BilliardsRankingsManager
                 {
                     if (currentColor.Equals("transparent", StringComparison.OrdinalIgnoreCase))
                     {
-                        previewBox.Background = new SolidColorBrush(Colors.Transparent);
+                        // Create checkerboard pattern for transparency indicator
+                        var checkerboard = new DrawingBrush
+                        {
+                            TileMode = TileMode.Tile,
+                            Viewport = new Rect(0, 0, 10, 10),
+                            ViewportUnits = BrushMappingMode.Absolute,
+                            Drawing = new GeometryDrawing
+                            {
+                                Brush = Brushes.LightGray,
+                                Geometry = new GeometryGroup
+                                {
+                                    Children = new GeometryCollection
+                        {
+                            new RectangleGeometry(new Rect(0, 0, 5, 5)),
+                            new RectangleGeometry(new Rect(5, 5, 5, 5))
+                        }
+                                }
+                            }
+                        };
+                        previewBox.Background = checkerboard;
                     }
                     else
                     {
@@ -1074,8 +1249,19 @@ namespace BilliardsRankingsManager
                 {
                     FullOpen = true,
                     AnyColor = true,
-                    CustomColors = Settings.CustomColors // Load saved custom colors
+                    CustomColors = Settings.CustomColors
                 };
+
+                // Set current color as the dialog's initial color
+                try
+                {
+                    if (!currentColor.Equals("transparent", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var wpfColor = (Color)ColorConverter.ConvertFromString(currentColor);
+                        dialog.Color = System.Drawing.Color.FromArgb(wpfColor.A, wpfColor.R, wpfColor.G, wpfColor.B);
+                    }
+                }
+                catch { }
 
                 if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 {
@@ -1085,7 +1271,6 @@ namespace BilliardsRankingsManager
                     updatePreview();
                 }
 
-                // Save custom colors regardless of OK/Cancel
                 Settings.CustomColors = dialog.CustomColors;
                 SaveSettings();
             };
@@ -1517,14 +1702,14 @@ namespace BilliardsRankingsManager
         }
 
         private void TriggerPreviewUpdate()
-{
-    // Only update if preview window is open
-    if (_previewWindow != null && _previewWindow.IsVisible && _previewUpdateTimer != null)
-    {
-        _previewUpdateTimer.Stop();
-        _previewUpdateTimer.Start(); // Restart the 150ms countdown
-    }
-}
+        {
+            // Only update if preview window is open
+            if (_previewWindow != null && _previewWindow.IsVisible && _previewUpdateTimer != null)
+            {
+                _previewUpdateTimer.Stop();
+                _previewUpdateTimer.Start(); // Restart the 150ms countdown
+            }
+        }
 
 
 
@@ -1758,6 +1943,8 @@ namespace BilliardsRankingsManager
         {
             try
             {
+                _settingsDirty = true; // Add this line at the top
+
                 var json = JsonSerializer.Serialize(Settings, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(_settingsPath, json);
             }
@@ -1768,24 +1955,142 @@ namespace BilliardsRankingsManager
             }
         }
 
-        protected override void OnClosing(CancelEventArgs e)
+
+        private string GetPresetsFolder()
         {
-            SaveData();
-
-            // Cleanup preview resources
-            if (_previewUpdateTimer != null)
-            {
-                _previewUpdateTimer.Stop();
-                _previewUpdateTimer.Dispose();
-            }
-
-            if (_previewWindow != null && _previewWindow.IsVisible)
-            {
-                _previewWindow.Close();
-            }
-
-            base.OnClosing(e);
+            var appFolder = AppDomain.CurrentDomain.BaseDirectory;
+            var presetsFolder = Path.Combine(appFolder, "SettingsPresets");
+            Directory.CreateDirectory(presetsFolder);
+            return presetsFolder;
         }
+
+        private List<string> LoadPresetsList()
+        {
+            var presetsFolder = GetPresetsFolder();
+            var files = Directory.GetFiles(presetsFolder, "*.json");
+            return files.Select(f => Path.GetFileNameWithoutExtension(f)).ToList();
+        }
+
+        private void RebuildSettingsPanel()
+        {
+            // Find the main grid
+            if (Content is Grid mainGrid && mainGrid.Children.Count >= 2)
+            {
+                // Remove old settings panel (right column, index 1)
+                mainGrid.Children.RemoveAt(1);
+
+                // Create new settings panel
+                var newSettingsPanel = CreateSettingsPanel();
+                Grid.SetColumn(newSettingsPanel, 1);
+                mainGrid.Children.Add(newSettingsPanel);
+            }
+        }
+
+        private void LoadPresetFromFile(string presetName)
+        {
+            try
+            {
+                var presetsFolder = GetPresetsFolder();
+                var filePath = Path.Combine(presetsFolder, presetName + ".json");
+
+                if (!File.Exists(filePath))
+                {
+                    MessageBox.Show($"Preset file not found: {presetName}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                var json = File.ReadAllText(filePath);
+                var loadedSettings = JsonSerializer.Deserialize<AppSettings>(json);
+
+                if (loadedSettings != null)
+                {
+                    // Copy all properties using reflection
+                    foreach (var prop in typeof(AppSettings).GetProperties())
+                    {
+                        if (prop.CanWrite)
+                        {
+                            var value = prop.GetValue(loadedSettings);
+                            prop.SetValue(Settings, value);
+                        }
+                    }
+
+                    _currentPresetName = presetName;
+                    _settingsDirty = false;
+                    RebuildSettingsPanel();
+
+                    MessageBox.Show($"Loaded preset: {presetName}", "Success",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading preset: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void SavePresetDialog()
+        {
+            var presetsFolder = GetPresetsFolder();
+
+            var dialog = new SaveFileDialog
+            {
+                Filter = "JSON Files|*.json",
+                Title = "Save Settings Preset",
+                InitialDirectory = presetsFolder,
+                FileName = string.IsNullOrEmpty(_currentPresetName) ? "MyPreset" : _currentPresetName
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var json = JsonSerializer.Serialize(Settings, new JsonSerializerOptions { WriteIndented = true });
+                    File.WriteAllText(dialog.FileName, json);
+
+                    _currentPresetName = Path.GetFileNameWithoutExtension(dialog.FileName);
+                    _settingsDirty = false;
+
+                    // Refresh preset dropdown
+                    RefreshPresetDropdown();
+
+                    MessageBox.Show($"Preset saved: {_currentPresetName}", "Success",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error saving preset: {ex.Message}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void RefreshPresetDropdown()
+        {
+            if (_presetComboBox == null) return;
+
+            _presetComboBox.Items.Clear();
+            // _presetComboBox.Items.Add("Current Settings");
+
+            var presets = LoadPresetsList();
+            foreach (var preset in presets)
+            {
+                _presetComboBox.Items.Add(preset);
+            }
+
+            // Select current preset if one is loaded
+            if (!string.IsNullOrEmpty(_currentPresetName) && presets.Contains(_currentPresetName))
+            {
+                _presetComboBox.SelectedItem = _currentPresetName;
+            }
+            else
+            {
+                _presetComboBox.SelectedIndex = 0; // "Current Settings"
+            }
+        }
+
+
     }
 
 
