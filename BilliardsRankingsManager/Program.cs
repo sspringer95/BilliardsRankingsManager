@@ -418,6 +418,28 @@ namespace BilliardsRankingsManager
             Height = 700;
             Background = StyleConfig.UIBackground;
 
+            // Create main container
+            var dockPanel = new DockPanel();
+
+            // Create menu bar
+            var menuBar = new Menu();
+            DockPanel.SetDock(menuBar, Dock.Top);
+
+            var fileMenu = new MenuItem { Header = "_File" };
+
+            var importMenuItem = new MenuItem { Header = "_Import Rankings from CSV..." };
+            importMenuItem.Click += ImportRankingsFromCSV_Click;
+
+            var exportMenuItem = new MenuItem { Header = "_Export Rankings to CSV..." };
+            exportMenuItem.Click += ExportRankingsToCSV_Click;
+
+            fileMenu.Items.Add(importMenuItem);
+            fileMenu.Items.Add(exportMenuItem);
+
+            menuBar.Items.Add(fileMenu);
+            dockPanel.Children.Add(menuBar);
+
+            // Create main grid
             var mainGrid = new Grid();
             mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.5, GridUnitType.Star) });
@@ -432,7 +454,106 @@ namespace BilliardsRankingsManager
             Grid.SetColumn(rightPanel, 1);
             mainGrid.Children.Add(rightPanel);
 
-            Content = mainGrid;
+            dockPanel.Children.Add(mainGrid);
+            Content = dockPanel;
+        }
+
+        private void ExportRankingsToCSV_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new SaveFileDialog
+            {
+                Filter = "CSV Files|*.csv",
+                Title = "Export Rankings to CSV",
+                FileName = "rankings.csv"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var lines = new List<string>();
+
+                    // Export all 50 rankings (empty or not)
+                    for (int i = 0; i < 50; i++)
+                    {
+                        var name = Rankings[i].PlayerName ?? "";
+
+                        // Wrap in quotes if contains comma
+                        if (name.Contains(","))
+                        {
+                            name = $"\"{name}\"";
+                        }
+
+                        lines.Add(name);
+                    }
+
+                    File.WriteAllLines(dialog.FileName, lines);
+
+                    MessageBox.Show("Rankings exported successfully!", "Export Complete",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error exporting rankings: {ex.Message}", "Export Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void ImportRankingsFromCSV_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Filter = "CSV Files|*.csv",
+                Title = "Import Rankings from CSV"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var lines = File.ReadAllLines(dialog.FileName);
+
+                    // Import up to 50 lines
+                    for (int i = 0; i < 50; i++)
+                    {
+                        if (i < lines.Length)
+                        {
+                            var name = lines[i].Trim();
+
+                            // Remove quotes if present
+                            if (name.StartsWith("\"") && name.EndsWith("\""))
+                            {
+                                name = name.Substring(1, name.Length - 2);
+                            }
+
+                            Rankings[i].PlayerName = name;
+                        }
+                        else
+                        {
+                            // CSV has fewer than 50 lines - clear remaining
+                            Rankings[i].PlayerName = "";
+                        }
+                    }
+
+                    // Show warning if CSV had more than 50 lines
+                    if (lines.Length > 50)
+                    {
+                        MessageBox.Show($"CSV contained {lines.Length} entries. Only the first 50 were imported.",
+                            "Import Notice", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Successfully imported {lines.Length} rankings!", "Import Complete",
+                            MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error importing rankings: {ex.Message}", "Import Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
         }
 
         private void SwapRankings(int index1, int index2)
