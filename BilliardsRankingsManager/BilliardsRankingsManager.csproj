@@ -10,12 +10,34 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <Page Remove="App.xaml" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<Using Remove="System.Drawing" />
 		<Using Remove="System.Windows.Forms" />
 	</ItemGroup>
 
 	<ItemGroup>
+		<PackageReference Include="Extended.Wpf.Toolkit" Version="5.0.0" />
+		<PackageReference Include="MaterialDesignThemes" Version="5.3.0" />
 		<PackageReference Include="SkiaSharp" Version="3.119.1" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Compile Update="Properties\Resources.Designer.cs">
+	    <DesignTime>True</DesignTime>
+	    <AutoGen>True</AutoGen>
+	    <DependentUpon>Resources.resx</DependentUpon>
+	  </Compile>
+	</ItemGroup>
+
+
+	<ItemGroup>
+	  <EmbeddedResource Update="Properties\Resources.resx">
+	    <Generator>ResXFileCodeGenerator</Generator>
+	    <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+	  </EmbeddedResource>
 	</ItemGroup>
 
 </Project>

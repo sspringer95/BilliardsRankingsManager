@@ -1,4 +1,5 @@
-﻿using Microsoft.Win32;
+﻿using MaterialDesignThemes.Wpf;
+using Microsoft.Win32;
 using SkiaSharp;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -10,6 +11,10 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Xceed.Wpf.Toolkit;
+using MessageBox = System.Windows.MessageBox;
+
+
 
 namespace BilliardsRankingsManager
 {
@@ -36,7 +41,10 @@ namespace BilliardsRankingsManager
 
         // UI Colors
         public static Brush UIBackground = new SolidColorBrush(Color.FromRgb(240, 240, 240));
-        public static Brush UIAccent = new SolidColorBrush(Color.FromRgb(27, 94, 32));
+
+        public static Brush UILightBrown = new SolidColorBrush(Color.FromRgb(201, 181, 156));
+        public static Brush UILighterBrown = new SolidColorBrush(Color.FromRgb(217, 207, 199));
+        public static Brush ExpandedBackground = new SolidColorBrush(Color.FromRgb(225, 225, 225)); 
     }
 
     // ============================================
@@ -140,6 +148,7 @@ namespace BilliardsRankingsManager
         private string _titleText = "TOP 20 RANKINGS";
         private string _fontFamily = StyleConfig.DefaultFontFamily;
         private RankFormat _rankFormat = RankFormat.NumberDot;
+
         private int[] _customColors = new int[16]
         {
             0xFFFFFF, // White
@@ -159,8 +168,38 @@ namespace BilliardsRankingsManager
             0x008080, // Teal
             0xC0C0C0  // Silver
         };
+
+        public int[] CustomColors
+        {
+            get => _customColors;
+            set { _customColors = value; OnPropertyChanged(); }
+        }
+
+
         private int _playerCount = 20;
         private int _titleFontSize = 48;
+
+        private bool _backgroundExpanded = false;
+        private bool _textExpanded = false;
+        private bool _spacingExpanded = false;
+
+        public bool BackgroundExpanded
+        {
+            get => _backgroundExpanded;
+            set { _backgroundExpanded = value; OnPropertyChanged(); }
+        }
+
+        public bool TextExpanded
+        {
+            get => _textExpanded;
+            set { _textExpanded = value; OnPropertyChanged(); }
+        }
+
+        public bool SpacingExpanded
+        {
+            get => _spacingExpanded;
+            set { _spacingExpanded = value; OnPropertyChanged(); }
+        }
 
 
         public int TitleFontSize
@@ -175,11 +214,7 @@ namespace BilliardsRankingsManager
             set { _playerCount = value; OnPropertyChanged(); }
         }
 
-        public int[] CustomColors
-        {
-            get => _customColors;
-            set { _customColors = value; OnPropertyChanged(); }
-        }
+      
 
         public string ExportPath
         {
@@ -411,10 +446,12 @@ namespace BilliardsRankingsManager
         }
 
 
+
+
         private void InitializeComponent()
         {
             Title = "Billiards Top 20 Rankings Manager";
-            Width = 700;
+            Width = 800;
             Height = 700;
             Background = StyleConfig.UIBackground;
 
@@ -425,6 +462,7 @@ namespace BilliardsRankingsManager
             var menuBar = new Menu();
             DockPanel.SetDock(menuBar, Dock.Top);
 
+            // File Menu
             var fileMenu = new MenuItem { Header = "_File" };
 
             var importMenuItem = new MenuItem { Header = "_Import Rankings from CSV..." };
@@ -435,6 +473,43 @@ namespace BilliardsRankingsManager
 
             fileMenu.Items.Add(importMenuItem);
             fileMenu.Items.Add(exportMenuItem);
+            fileMenu.Items.Add(new Separator());
+
+            var setExportLocationItem = new MenuItem { Header = "Set _Export Location..." };
+            setExportLocationItem.Click += SetExportLocation_Click;
+
+            var browseLogoItem = new MenuItem { Header = "Browse for _Logo..." };
+            browseLogoItem.Click += BrowseLogo_Click;
+
+            fileMenu.Items.Add(setExportLocationItem);
+            fileMenu.Items.Add(browseLogoItem);
+            fileMenu.Items.Add(new Separator());
+
+            var loadPresetItem = new MenuItem { Header = "_Load Preset..." };
+            loadPresetItem.Click += (s, e) =>
+            {
+                if (_settingsDirty)
+                {
+                    var result = MessageBox.Show(
+                        "Save current settings as a preset before loading?",
+                        "Unsaved Changes",
+                        MessageBoxButton.YesNoCancel,
+                        MessageBoxImage.Question);
+
+                    if (result == MessageBoxResult.Yes)
+                        SavePresetDialog();
+                    else if (result == MessageBoxResult.Cancel)
+                        return;
+                }
+
+                LoadPresetDialog();
+            };
+
+            var savePresetItem = new MenuItem { Header = "_Save Preset..." };
+            savePresetItem.Click += (s, e) => SavePresetDialog();
+
+            fileMenu.Items.Add(loadPresetItem);
+            fileMenu.Items.Add(savePresetItem);
 
             menuBar.Items.Add(fileMenu);
             dockPanel.Children.Add(menuBar);
@@ -566,6 +641,36 @@ namespace BilliardsRankingsManager
             Rankings[index2].PlayerName = temp;
         }
 
+        private System.Windows.Threading.DispatcherTimer _refreshTimer;
+
+        private void ScheduleRefresh()
+        {
+            // Cancel existing timer if any
+            if (_refreshTimer != null)
+            {
+                _refreshTimer.Stop();
+                _refreshTimer = null;
+            }
+
+            // Create new timer for 150ms debounce
+            _refreshTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(150)
+            };
+
+            _refreshTimer.Tick += (s, e) =>
+            {
+                _refreshTimer.Stop();
+                _refreshTimer = null;
+                RefreshPreview(); // Calls the existing RefreshPreview method
+            };
+
+            _refreshTimer.Start();
+        }
+
+
+
+
         private List<Button> _downButtons = new List<Button>();
 
         private ScrollViewer CreateRankingsPanel()
@@ -609,7 +714,6 @@ namespace BilliardsRankingsManager
                 Text = "List of  ",
                 FontSize = titleFontSize,
                 FontWeight = FontWeights.Bold,
-                Foreground = StyleConfig.UIAccent,
                 VerticalAlignment = VerticalAlignment.Center
             });
 
@@ -660,7 +764,6 @@ namespace BilliardsRankingsManager
                 Text = " players",
                 FontSize = titleFontSize,
                 FontWeight = FontWeights.Bold,
-                Foreground = StyleConfig.UIAccent,
                 VerticalAlignment = VerticalAlignment.Center
             });
 
@@ -832,86 +935,22 @@ namespace BilliardsRankingsManager
 
         private ScrollViewer CreateSettingsPanel()
         {
+
+
             var stack = new StackPanel { Margin = new Thickness(15) };
 
             // Settings Title
-            //var title = new TextBlock
-            //{
-            //    Text = "Settings",
-            //    FontSize = 18,
-            //    FontWeight = FontWeights.Bold,
-            //    Margin = new Thickness(0, 0, 0, 15),
-            //    Foreground = StyleConfig.UIAccent
-            //};
-            //stack.Children.Add(title);
-            stack.Children.Add(CreateSectionHeader("Presets (Save/Load)"));
-
-
-            // Presets Section
-            var presetPanel = new StackPanel
+            var title = new TextBlock
             {
-                Orientation = Orientation.Horizontal,
-                Margin = new Thickness(0, 0, 0, 15)
+                Text = "Settings",
+                FontSize = 18,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 0, 0, 0)
             };
 
-            var loadBtn = new Button
-            {
-                Content = "Load Preset",
-                Width = 90,
-                Padding = new Thickness(8, 4, 8, 4),
-                Margin = new Thickness(0, 0, 5, 0)
-            };
+            stack.Children.Add(title);
 
-            var saveBtn = new Button
-            {
-                Content = "Save Preset",
-                Width = 90,
-                Padding = new Thickness(8, 4, 8, 4)
-            };
-
-            loadBtn.Click += (s, e) =>
-            {
-                if (_settingsDirty)
-                {
-                    var result = MessageBox.Show(
-                        "Save current settings as a preset before loading?",
-                        "Unsaved Changes",
-                        MessageBoxButton.YesNoCancel,
-                        MessageBoxImage.Question);
-
-                    if (result == MessageBoxResult.Yes)
-                        SavePresetDialog();
-                    else if (result == MessageBoxResult.Cancel)
-                        return;
-                }
-
-                LoadPresetDialog();
-            };
-
-            saveBtn.Click += (s, e) => SavePresetDialog();
-
-            presetPanel.Children.Add(loadBtn);
-            presetPanel.Children.Add(saveBtn);
-
-            stack.Children.Add(presetPanel);
-
-            // Export Section (existing code continues...)
-            stack.Children.Add(CreateSectionHeader("Export"));
-
-            var locationBtn = CreateButton("Set Export Location", SetExportLocation_Click);
-            locationBtn.Margin = new Thickness(0, 0, 0, 5);
-            stack.Children.Add(locationBtn);
-
-            var locationStatus = new TextBlock
-            {
-                Text = string.IsNullOrEmpty(Settings.ExportPath) ? "No location set" : Settings.ExportPath,
-                Margin = new Thickness(0, 0, 0, 10),
-                FontSize = 11,
-                FontStyle = FontStyles.Italic,
-                TextWrapping = TextWrapping.Wrap
-            };
-            locationStatus.Name = "LocationStatus";
-            stack.Children.Add(locationStatus);
+            stack.Children.Add(CreateDivider());
 
             var previewBtn = CreateButton("Preview", (s, e) => _ = ShowPreview(), isPrimary: false);
             previewBtn.Name = "PreviewButton";
@@ -924,37 +963,22 @@ namespace BilliardsRankingsManager
             stack.Children.Add(CreateDivider());
 
             // Logo Section
-            stack.Children.Add(CreateSectionHeader("Logo"));
-
-            var logoBtn = CreateButton("Browse for Logo", BrowseLogo_Click);
-            logoBtn.Margin = new Thickness(0, 0, 0, 5);
-            stack.Children.Add(logoBtn);
-
-            var logoStatus = new TextBlock
-            {
-                Text = string.IsNullOrEmpty(Settings.LogoPath) ? "No logo selected" : Path.GetFileName(Settings.LogoPath),
-                Margin = new Thickness(0, 0, 0, 10),
-                FontSize = 11,
-                FontStyle = FontStyles.Italic,
-                TextWrapping = TextWrapping.Wrap
-            };
-            logoStatus.Name = "LogoStatus";
-            stack.Children.Add(logoStatus);
-
             stack.Children.Add(CreateSliderSetting("Logo Size:", Settings.LogoHeight, 50, 250,
                 v => { Settings.LogoHeight = v; SaveSettings(); }));
 
 
             stack.Children.Add(CreateDivider());
 
+
             // Background Section (collapsible)
             var backgroundExpander = new Expander
             {
                 Header = "Background (Size & Colors)",
-                IsExpanded = false,
+                IsExpanded = Settings.BackgroundExpanded,
                 Margin = new Thickness(0, 5, 0, 5),
                 FontWeight = FontWeights.SemiBold,
-                FontSize = 13
+                FontSize = 13,
+                Background = Brushes.Transparent // Keep header transparent
             };
 
             var backgroundStack = new StackPanel();
@@ -963,31 +987,89 @@ namespace BilliardsRankingsManager
                 v => { Settings.ExportWidth = v; SaveSettings(); }, 5));
             backgroundStack.Children.Add(CreateSliderSetting("Background Height (px):", Settings.ExportHeight, 100, 1920,
                 v => { Settings.ExportHeight = v; SaveSettings(); }, 5));
-            backgroundStack.Children.Add(CreateColorSetting("Background:", Settings.BackgroundColor,
-                c => { Settings.BackgroundColor = c; SaveSettings(); }));
-            backgroundStack.Children.Add(CreateColorSetting("Border:", Settings.BorderColor,
-                c => { Settings.BorderColor = c; SaveSettings(); }));
+            backgroundStack.Children.Add(CreateColorSetting("Background:",
+                () => Settings.BackgroundColor,
+                c => { Settings.BackgroundColor = c; SaveSettings(); ScheduleRefresh(); }));
+            backgroundStack.Children.Add(CreateColorSetting("Border:",
+                () => Settings.BorderColor,  // Func that reads current value
+                c => { Settings.BorderColor = c; SaveSettings(); ScheduleRefresh(); }));
 
-            backgroundExpander.Content = backgroundStack;
+
+            // --- MATERIAL DESIGN REFACTOR START ---
+
+            // 1. Create a Border to handle the Padding (Space inside the card)
+            var backgroundBorder = new Border
+            {
+                Child = backgroundStack,
+                Padding = new Thickness(16) // Adjust this number to increase/decrease internal space
+            };
+
+            // 2. Wrap that Border in a Material Design Card
+            // The Card provides the "Paper" background color and the shadow.
+            var backgroundCard = new MaterialDesignThemes.Wpf.Card
+            {
+                Content = backgroundBorder,
+                Margin = new Thickness(8, 10, 8, 8), // Margin prevents the shadow from being clipped
+                UniformCornerRadius = 6 // Optional: Rounds the corners slightly
+            };
+
+            // 3. Logic: Only show the Card when Expanded
+            // Set initial state
+            backgroundExpander.Content = Settings.BackgroundExpanded ? backgroundCard : null;
+
+            // Handle Expand (Show Card)
+            backgroundExpander.Expanded += (s, e) =>
+            {
+                Settings.BackgroundExpanded = true;
+                SaveSettings();
+                backgroundExpander.Content = backgroundCard;
+            };
+
+            // Handle Collapse (Hide Card/Shadow completely)
+            backgroundExpander.Collapsed += (s, e) =>
+            {
+                Settings.BackgroundExpanded = false;
+                SaveSettings();
+                backgroundExpander.Content = null;
+            };
+
+            // --- MATERIAL DESIGN REFACTOR END ---
+
             stack.Children.Add(backgroundExpander);
 
-
-
             stack.Children.Add(CreateDivider());
+
+
+
+
 
             // Text Section (collapsible)
             var textExpander = new Expander
             {
                 Header = "Text (Size, Color, and outline)",
-                IsExpanded = false,
+                IsExpanded = Settings.TextExpanded,
                 Margin = new Thickness(0, 5, 0, 5),
                 FontWeight = FontWeights.SemiBold,
-                FontSize = 13
+                FontSize = 13,
+                Background = Brushes.Transparent
             };
 
             var textStack = new StackPanel();
 
-            // Title Text input
+            var textBorder = new Border
+            {
+                Child = textStack, // <--- IMPORTANT: This puts the Text settings inside
+                Padding = new Thickness(16)
+            };
+
+            var textCard = new MaterialDesignThemes.Wpf.Card
+            {
+                Content = textBorder,
+                Margin = new Thickness(8, 15, 8, 8),
+                UniformCornerRadius = 6
+            };
+
+            // --- 1. Title Text Input ---
             var titleTextPanel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
             titleTextPanel.Children.Add(new TextBlock { Text = "Title Text:", FontWeight = FontWeights.SemiBold, FontSize = 12 });
             var titleBox = new TextBox
@@ -996,6 +1078,7 @@ namespace BilliardsRankingsManager
                 Margin = new Thickness(0, 3, 0, 0),
                 Padding = new Thickness(5)
             };
+
             titleBox.TextChanged += (s, e) =>
             {
                 Settings.TitleText = titleBox.Text;
@@ -1004,20 +1087,24 @@ namespace BilliardsRankingsManager
             titleTextPanel.Children.Add(titleBox);
             textStack.Children.Add(titleTextPanel);
 
+            // --- 2. Sliders & Colors ---
             textStack.Children.Add(CreateSliderSetting("Title Font Size:", Settings.TitleFontSize, 24, 72,
                 v => { Settings.TitleFontSize = v; SaveSettings(); }));
-            textStack.Children.Add(CreateColorSetting("Title Color:", Settings.TitleTextColor,
-                c => { Settings.TitleTextColor = c; SaveSettings(); }));
+            textStack.Children.Add(CreateColorSetting("Title Color:",
+            () => Settings.TitleTextColor,
+            c => { Settings.TitleTextColor = c; SaveSettings(); ScheduleRefresh(); }));
 
             textStack.Children.Add(CreateSliderSetting("Player Name Font Size:", Settings.FontSize, 12, 48,
                 v => { Settings.FontSize = v; SaveSettings(); }));
-            textStack.Children.Add(CreateColorSetting("Player Text Color:", Settings.PlayerTextColor,
-                c => { Settings.PlayerTextColor = c; SaveSettings(); }));
-            textStack.Children.Add(CreateColorSetting("Rank Number Color:", Settings.RankNumberColor,
-                c => { Settings.RankNumberColor = c; SaveSettings(); }));
+            textStack.Children.Add(CreateColorSetting("Player Text Color:",
+                () => Settings.PlayerTextColor,
+                c => { Settings.PlayerTextColor = c; SaveSettings(); ScheduleRefresh(); }));
+            textStack.Children.Add(CreateColorSetting("Rank Number Color:",
+                () => Settings.RankNumberColor,
+                c => { Settings.RankNumberColor = c; SaveSettings(); ScheduleRefresh(); }));
 
-            // Font Family
-            // Font Family Dropdown with Previews
+
+            // --- 3. Font Family Dropdown ---
             var fontPanel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
             fontPanel.Children.Add(new TextBlock { Text = "Font Family:", FontWeight = FontWeights.SemiBold, FontSize = 12 });
 
@@ -1071,7 +1158,7 @@ namespace BilliardsRankingsManager
             fontPanel.Children.Add(fontCombo);
             textStack.Children.Add(fontPanel);
 
-            // Rank Format Dropdown
+            // --- 4. Rank Format Dropdown ---
             var rankFormatPanel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
             rankFormatPanel.Children.Add(new TextBlock { Text = "Rank Format:", FontWeight = FontWeights.SemiBold, FontSize = 12 });
 
@@ -1112,7 +1199,7 @@ namespace BilliardsRankingsManager
             rankFormatPanel.Children.Add(rankFormatCombo);
             textStack.Children.Add(rankFormatPanel);
 
-            // Text Outline - with hideable options
+            // --- 5. Text Outline Logic ---
             var outlineCheckPanel = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
             var outlineCheck = new CheckBox
             {
@@ -1129,8 +1216,9 @@ namespace BilliardsRankingsManager
                 Margin = new Thickness(15, 0, 0, 0) // Indented
             };
 
-            outlineOptionsPanel.Children.Add(CreateColorSetting("Outline Color:", Settings.OutlineColor,
-                c => { Settings.OutlineColor = c; SaveSettings(); }));
+            outlineOptionsPanel.Children.Add(CreateColorSetting("Outline Color:",
+                () => Settings.OutlineColor,
+                c => { Settings.OutlineColor = c; SaveSettings(); ScheduleRefresh(); }));
             outlineOptionsPanel.Children.Add(CreateSliderSetting("Outline Width:", Settings.OutlineWidth, 1, 10,
                 v => { Settings.OutlineWidth = v; SaveSettings(); }));
 
@@ -1149,23 +1237,65 @@ namespace BilliardsRankingsManager
 
             textStack.Children.Add(outlineOptionsPanel);
 
-            textExpander.Content = textStack;
+
+            // --- MATERIAL DESIGN REFACTOR START ---
+
+            
+
+            // 3. Logic: Only show the Card when Expanded
+            textExpander.Content = Settings.TextExpanded ? textCard : null;
+
+            textExpander.Expanded += (s, e) =>
+            {
+                Settings.TextExpanded = true;
+                SaveSettings();
+                textExpander.Content = textCard;
+            };
+
+            textExpander.Collapsed += (s, e) =>
+            {
+                Settings.TextExpanded = false;
+                SaveSettings();
+                textExpander.Content = null;
+            };
+
+            // --- MATERIAL DESIGN REFACTOR END ---
+
             stack.Children.Add(textExpander);
 
-
             stack.Children.Add(CreateDivider());
+
+
+
+
 
             // Spacing & Margins Section (collapsible)
             var spacingExpander = new Expander
             {
                 Header = "Spacing & Margins",
-                IsExpanded = false,
+                IsExpanded = Settings.SpacingExpanded,
                 Margin = new Thickness(0, 5, 0, 5),
                 FontWeight = FontWeights.SemiBold,
-                FontSize = 13
+                FontSize = 13,
+                Background = Brushes.Transparent
             };
 
             var spacingStack = new StackPanel();
+
+
+            var spacingBorder = new Border
+            {
+                Child = spacingStack, // <--- IMPORTANT: This puts the Text settings inside
+                Padding = new Thickness(16)
+            };
+
+            var spacingCard = new MaterialDesignThemes.Wpf.Card
+            {
+                Content = spacingBorder,
+                Margin = new Thickness(8, 15, 8, 8),
+                UniformCornerRadius = 6
+            };
+
 
             spacingStack.Children.Add(CreateSliderSetting("Line Spacing:", Settings.Spacing, 20, 80,
                 v => { Settings.Spacing = v; SaveSettings(); }));
@@ -1180,22 +1310,51 @@ namespace BilliardsRankingsManager
             spacingStack.Children.Add(CreateNumberSetting("Margin Right:", Settings.PaddingRight,
                 v => { Settings.PaddingRight = v; SaveSettings(); }));
 
-            spacingExpander.Content = spacingStack;
+            
+
+            // Logic
+            spacingExpander.Content = Settings.SpacingExpanded ? spacingCard : null;
+
+            spacingExpander.Expanded += (s, e) =>
+            {
+                Settings.SpacingExpanded = true;
+                SaveSettings();
+                spacingExpander.Content = spacingCard;
+            };
+
+            spacingExpander.Collapsed += (s, e) =>
+            {
+                Settings.SpacingExpanded = false;
+                SaveSettings();
+                spacingExpander.Content = null;
+            };
+
             stack.Children.Add(spacingExpander);
 
-            // TODO: More sections to come
+
+
+
+
+            stack.Children.Add(new Border { Height = 20 });
+
 
             return new ScrollViewer
             {
                 Content = stack,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+                VerticalScrollBarVisibility = ScrollBarVisibility.Visible
             };
         }
 
         private TextBox CreateSelectAllTextBox()
         {
-            var textBox = new TextBox();
+            var textBox = new TextBox
+            {
+                BorderBrush = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(6, 4, 6, 4)
+            };
 
+            // Select all on focus
             textBox.GotKeyboardFocus += (s, e) => textBox.SelectAll();
             textBox.PreviewMouseLeftButtonDown += (s, e) =>
             {
@@ -1209,18 +1368,6 @@ namespace BilliardsRankingsManager
             return textBox;
         }
 
-
-        private TextBlock CreateSectionHeader(string text)
-        {
-            return new TextBlock
-            {
-                Text = text,
-                FontSize = 14, // Reduced from 16
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 8, 0, 5)
-            };
-        }
-
         private StackPanel CreateNumberSetting(string label, int defaultValue, Action<int> onChange)
         {
             var panel = new StackPanel { Margin = new Thickness(0, 3, 0, 3) };
@@ -1232,6 +1379,7 @@ namespace BilliardsRankingsManager
                 Margin = new Thickness(0, 5, 0, 0),
                 Padding = new Thickness(5)
             };
+
             textBox.TextChanged += (s, e) =>
             {
                 if (int.TryParse(textBox.Text, out int value) && value > 0)
@@ -1293,10 +1441,11 @@ namespace BilliardsRankingsManager
             return panel;
         }
 
-        private StackPanel CreateColorSetting(string label, string currentColor, Action<string> onChange)
+        private StackPanel CreateColorSetting(string label, Func<string> getCurrentColor, Action<string> onChange)
         {
             var panel = new StackPanel { Margin = new Thickness(0, 5, 0, 5), Orientation = Orientation.Horizontal };
 
+            // Label
             var labelText = new TextBlock
             {
                 Text = label,
@@ -1306,30 +1455,26 @@ namespace BilliardsRankingsManager
             };
             panel.Children.Add(labelText);
 
-            var colorButton = new Button
-            {
-                Width = 80,
-                Height = 25,
-                Content = "Pick Color",
-                Margin = new Thickness(5, 0, 0, 0)
-            };
-
+            // Preview Box (clickable)
             var previewBox = new Border
             {
-                Width = 40,
-                Height = 25,
-                BorderBrush = Brushes.Gray,
+                Width = 80,
+                Height = 30,
+                BorderBrush = new SolidColorBrush(Color.FromRgb(180, 180, 180)),
                 BorderThickness = new Thickness(1),
-                Margin = new Thickness(5, 0, 0, 0)
+                CornerRadius = new CornerRadius(3),
+                Cursor = Cursors.Hand
             };
 
+            // Helper to update preview
             Action updatePreview = () =>
             {
                 try
                 {
+                    var currentColor = getCurrentColor(); // Read fresh value each time
                     if (currentColor.Equals("transparent", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Create checkerboard pattern for transparency indicator
+                        // Checkerboard pattern
                         var checkerboard = new DrawingBrush
                         {
                             TileMode = TileMode.Tile,
@@ -1341,10 +1486,10 @@ namespace BilliardsRankingsManager
                                 Geometry = new GeometryGroup
                                 {
                                     Children = new GeometryCollection
-                        {
-                            new RectangleGeometry(new Rect(0, 0, 5, 5)),
-                            new RectangleGeometry(new Rect(5, 5, 5, 5))
-                        }
+                            {
+                                new RectangleGeometry(new Rect(0, 0, 5, 5)),
+                                new RectangleGeometry(new Rect(5, 5, 5, 5))
+                            }
                                 }
                             }
                         };
@@ -1364,7 +1509,21 @@ namespace BilliardsRankingsManager
 
             updatePreview();
 
-            colorButton.Click += (s, e) =>
+            // Hover effects
+            previewBox.MouseEnter += (s, e) =>
+            {
+                previewBox.BorderBrush = new SolidColorBrush(Color.FromRgb(100, 100, 100));
+                previewBox.BorderThickness = new Thickness(2);
+            };
+
+            previewBox.MouseLeave += (s, e) =>
+            {
+                previewBox.BorderBrush = new SolidColorBrush(Color.FromRgb(180, 180, 180));
+                previewBox.BorderThickness = new Thickness(1);
+            };
+
+            // Click opens WinForms color picker
+            previewBox.MouseLeftButtonDown += (s, e) =>
             {
                 var dialog = new System.Windows.Forms.ColorDialog
                 {
@@ -1373,47 +1532,52 @@ namespace BilliardsRankingsManager
                     CustomColors = Settings.CustomColors
                 };
 
-                // Set current color as the dialog's initial color
+                // Set current color - now reading fresh value
                 try
                 {
+                    var currentColor = getCurrentColor();
                     if (!currentColor.Equals("transparent", StringComparison.OrdinalIgnoreCase))
                     {
                         var wpfColor = (Color)ColorConverter.ConvertFromString(currentColor);
-                        dialog.Color = System.Drawing.Color.FromArgb(wpfColor.A, wpfColor.R, wpfColor.G, wpfColor.B);
+                        dialog.Color = System.Drawing.Color.FromArgb(wpfColor.R, wpfColor.G, wpfColor.B); // Note: removed alpha
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    // If conversion fails, dialog will open to default color
+                    System.Diagnostics.Debug.WriteLine($"Color conversion error: {ex.Message}");
+                }
 
                 if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 {
-                    var wpfColor = Color.FromArgb(dialog.Color.A, dialog.Color.R, dialog.Color.G, dialog.Color.B);
-                    currentColor = wpfColor.ToString();
-                    onChange(currentColor);
+                    // Convert back to WPF color with full opacity (alpha = 255)
+                    var wpfColor = Color.FromArgb(255, dialog.Color.R, dialog.Color.G, dialog.Color.B);
+                    onChange(wpfColor.ToString());
                     updatePreview();
                 }
 
+                // Save custom colors
                 Settings.CustomColors = dialog.CustomColors;
                 SaveSettings();
             };
 
+            // Transparent button
             var transparentBtn = new Button
             {
                 Content = "Transparent",
-                Width = 80,
+                Width = 110,
                 Height = 25,
                 Margin = new Thickness(5, 0, 0, 0)
             };
 
             transparentBtn.Click += (s, e) =>
             {
-                currentColor = "Transparent";
-                onChange(currentColor);
+                onChange("Transparent");
                 updatePreview();
             };
 
-            panel.Children.Add(colorButton);
-            panel.Children.Add(transparentBtn);
             panel.Children.Add(previewBox);
+            panel.Children.Add(transparentBtn);
 
             return panel;
         }
@@ -1431,7 +1595,6 @@ namespace BilliardsRankingsManager
 
             if (isPrimary)
             {
-                button.Background = StyleConfig.UIAccent;
                 button.Foreground = Brushes.White;
                 button.FontWeight = FontWeights.Bold;
             }
@@ -1440,6 +1603,8 @@ namespace BilliardsRankingsManager
             return button;
         }
 
+
+
         private void BrowseLogo_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new OpenFileDialog
@@ -1447,6 +1612,12 @@ namespace BilliardsRankingsManager
                 Filter = "Image Files|*.png;*.jpg;*.jpeg;*.bmp",
                 Title = "Select Logo Image"
             };
+
+            // Set initial directory to existing logo path if it exists
+            if (!string.IsNullOrEmpty(Settings.LogoPath) && File.Exists(Settings.LogoPath))
+            {
+                dialog.InitialDirectory = Path.GetDirectoryName(Settings.LogoPath);
+            }
 
             if (dialog.ShowDialog() == true)
             {
@@ -1465,6 +1636,13 @@ namespace BilliardsRankingsManager
                 Title = "Set Export Location",
                 FileName = "top20_rankings.png"
             };
+
+            // Set initial directory to existing export path if it exists
+            if (!string.IsNullOrEmpty(Settings.ExportPath) && File.Exists(Settings.ExportPath))
+            {
+                dialog.InitialDirectory = Path.GetDirectoryName(Settings.ExportPath);
+                dialog.FileName = Path.GetFileName(Settings.ExportPath);
+            }
 
             if (dialog.ShowDialog() == true)
             {
@@ -1690,7 +1868,7 @@ namespace BilliardsRankingsManager
                     Title = "Preview - Top 20 Rankings (Live)",
                     Width = 1000,
                     Height = 750,
-                    WindowStartupLocation = WindowStartupLocation.CenterScreen
+                    WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
                 };
 
                 // Load image from memory
@@ -2094,16 +2272,21 @@ namespace BilliardsRankingsManager
 
         private void RebuildSettingsPanel()
         {
-            // Find the main grid
-            if (Content is Grid mainGrid && mainGrid.Children.Count >= 2)
+            if (Content is DockPanel dockPanel)
             {
-                // Remove old settings panel (right column, index 1)
-                mainGrid.Children.RemoveAt(1);
+                // Find the main grid (it's a child of the DockPanel)
+                var mainGrid = dockPanel.Children.OfType<Grid>().FirstOrDefault();
 
-                // Create new settings panel
-                var newSettingsPanel = CreateSettingsPanel();
-                Grid.SetColumn(newSettingsPanel, 1);
-                mainGrid.Children.Add(newSettingsPanel);
+                if (mainGrid != null && mainGrid.Children.Count >= 2)
+                {
+                    // Remove old settings panel (right column, index 1)
+                    mainGrid.Children.RemoveAt(1);
+
+                    // Create new settings panel
+                    var newSettingsPanel = CreateSettingsPanel();
+                    Grid.SetColumn(newSettingsPanel, 1);
+                    mainGrid.Children.Add(newSettingsPanel);
+                }
             }
         }
 
@@ -2214,14 +2397,4 @@ namespace BilliardsRankingsManager
 
     }
 
-
-    public class App : Application
-    {
-        [STAThread]
-        public static void Main()
-        {
-            var app = new App();
-            app.Run(new MainWindow());
-        }
-    }
 }
