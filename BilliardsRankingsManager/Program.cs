@@ -151,28 +151,45 @@ namespace BilliardsRankingsManager
 
         private int[] _customColors = new int[16]
         {
-            0xFFFFFF, // White
-            0xFF0000, // Red
-            0x00FF00, // Green
-            0x0000FF, // Blue
-            0xFFFF00, // Yellow
-            0xFF00FF, // Magenta
-            0x00FFFF, // Cyan
-            0x000000, // Black
-            0x808080, // Gray
-            0x800000, // Maroon
-            0x008000, // Dark Green
-            0x000080, // Navy
-            0x808000, // Olive
-            0x800080, // Purple
-            0x008080, // Teal
-            0xC0C0C0  // Silver
+            0x1B5E20, // Forest Green (dark felt green)
+            0x2E7D32, // Medium Green
+            0x4CAF50, // Bright Green
+            0x81C784, // Light Green
+            0x8B4513, // Saddle Brown (wood)
+            0xA0522D, // Sienna Brown
+            0xD2691E, // Rich Brown
+            0xF4A460, // Sandy Brown
+            0x212121, // Near Black
+            0x424242, // Dark Gray
+            0x757575, // Medium Gray
+            0xBDBDBD, // Light Gray
+            0xFFD700, // Gold (ranking accent)
+            0xB71C1C, // Deep Red
+            0x1565C0, // Rich Blue
+            0xF5F5F5  // Off White
         };
 
         public int[] CustomColors
         {
             get => _customColors;
             set { _customColors = value; OnPropertyChanged(); }
+        }
+
+        private double _splitterRatio = 1.5; // Default to 1.5*
+
+        public double SplitterRatio
+        {
+            get => _splitterRatio;
+            set { _splitterRatio = value; OnPropertyChanged(); }
+        }
+
+
+        private bool _settingsPanelVisible = true;
+
+        public bool SettingsPanelVisible
+        {
+            get => _settingsPanelVisible;
+            set { _settingsPanelVisible = value; OnPropertyChanged(); }
         }
 
 
@@ -446,6 +463,14 @@ namespace BilliardsRankingsManager
         }
 
 
+        private Grid _mainGrid;
+        private MenuItem _toggleSettingsMenuItem;
+
+        // Stores the "Star" ratio (e.g., 1.5*) so we don't lose it when hiding
+        private GridLength _lastSettingsColumnWidth = new GridLength(1.5, GridUnitType.Star);
+
+        // Stores the actual pixel width we removed so we can add it back exactly
+        private double _collapsedPanelWidth = 450;
 
 
         private void InitializeComponent()
@@ -459,11 +484,23 @@ namespace BilliardsRankingsManager
             var dockPanel = new DockPanel();
 
             // Create menu bar
-            var menuBar = new Menu();
+            var menuBar = new Menu
+            {
+                Background = StyleConfig.UIBackground, // Match window color
+                IsMainMenu = true,
+                Padding = new Thickness(0), // Remove container padding
+                VerticalAlignment = VerticalAlignment.Center
+            };
             DockPanel.SetDock(menuBar, Dock.Top);
 
             // File Menu
-            var fileMenu = new MenuItem { Header = "_File" };
+            var fileMenu = new MenuItem
+            {
+                Header = "_File",
+                Height = 25, // FORCE SMALLER HEIGHT (Standard Desktop is ~22-25)
+                Padding = new Thickness(10, 0, 10, 0), // Reduce internal spacing
+                VerticalAlignment = VerticalAlignment.Center
+            };
 
             var importMenuItem = new MenuItem { Header = "_Import Rankings from CSV..." };
             importMenuItem.Click += ImportRankingsFromCSV_Click;
@@ -511,26 +548,186 @@ namespace BilliardsRankingsManager
             fileMenu.Items.Add(loadPresetItem);
             fileMenu.Items.Add(savePresetItem);
 
+            fileMenu.Items.Add(new Separator());
+
+            var resetColorsItem = new MenuItem { Header = "Reset Custom _Colors to Default..." };
+            resetColorsItem.Click += (s, e) => ResetCustomColorsToDefault();
+            fileMenu.Items.Add(resetColorsItem);
+
+
+            // Settings Panel Toggle Menu Item
+            var toggleSettingsItem = new MenuItem
+            {
+                Header = Settings.SettingsPanelVisible ? "_Hide Settings Panel" : "_Show Settings Panel",
+                Height = 25, // MATCH FILE MENU HEIGHT
+                Padding = new Thickness(10, 0, 10, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            _toggleSettingsMenuItem = toggleSettingsItem;
+            toggleSettingsItem.Click += (s, e) => ToggleSettingsPanel();
+
             menuBar.Items.Add(fileMenu);
+            menuBar.Items.Add(toggleSettingsItem);
+
             dockPanel.Children.Add(menuBar);
+
+            // ---------------------------------------------------------
+            // REPLACEMENT BLOCK FOR GRID SETUP
+            // ---------------------------------------------------------
 
             // Create main grid
             var mainGrid = new Grid();
-            mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.5, GridUnitType.Star) });
+            _mainGrid = mainGrid; // Store reference
 
-            // Left Panel - Rankings
+            // Column 0: Rankings (Takes available space)
+            mainGrid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star)
+            });
+
+            // Column 1: The Splitter (Fixed width lane)
+            mainGrid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(5) // Fixed pixel width for the handle
+            });
+
+            // Column 2: Settings (Takes available space based on ratio)
+            // We use the initial ratio from settings here
+            mainGrid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(Settings.SplitterRatio, GridUnitType.Star)
+            });
+
+            // --- 1. Left Panel (Rankings) ---
             var leftPanel = CreateRankingsPanel();
             Grid.SetColumn(leftPanel, 0);
             mainGrid.Children.Add(leftPanel);
 
-            // Right Panel - Settings and Export
+            // --- 2. The Grid Splitter ---
+            var gridSplitter = new GridSplitter
+            {
+                Width = 5, // Matches Column 1 width
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+                Background = new SolidColorBrush(Color.FromRgb(200, 200, 200)), // Slightly lighter for visibility
+                ShowsPreview = true, // Shows a ghost line while dragging (better performance)
+                ResizeDirection = GridResizeDirection.Columns,
+                ResizeBehavior = GridResizeBehavior.PreviousAndNext, // Resizes Col 0 and Col 2
+                Cursor = Cursors.SizeWE
+            };
+            Grid.SetColumn(gridSplitter, 1); // Sits in its own dedicated column
+            mainGrid.Children.Add(gridSplitter);
+
+            // --- 3. Right Panel (Settings) ---
             var rightPanel = CreateSettingsPanel();
-            Grid.SetColumn(rightPanel, 1);
+            Grid.SetColumn(rightPanel, 2);
             mainGrid.Children.Add(rightPanel);
+
+            // ---------------------------------------------------------
 
             dockPanel.Children.Add(mainGrid);
             Content = dockPanel;
+
+     
+        }
+
+        private void ToggleSettingsPanel()
+        {
+            if (_mainGrid == null || _toggleSettingsMenuItem == null) return;
+
+            Settings.SettingsPanelVisible = !Settings.SettingsPanelVisible;
+            SaveSettings();
+
+            // Columns: 0=Rankings, 1=Splitter, 2=Settings
+            var splitterCol = _mainGrid.ColumnDefinitions[1];
+            var settingsCol = _mainGrid.ColumnDefinitions[2];
+
+            if (Settings.SettingsPanelVisible)
+            {
+                // --- SHOWING ---
+
+                // 1. Restore the layout
+                // Restore splitter to fixed size
+                splitterCol.Width = new GridLength(5);
+                // Restore settings to the last known ratio (Memory!)
+                settingsCol.Width = _lastSettingsColumnWidth;
+
+                _toggleSettingsMenuItem.Header = "_Hide Settings Panel";
+
+                // 2. Resize the Window (only if not maximized)
+                if (WindowState == System.Windows.WindowState.Normal)
+                {
+                    // Add back the exact pixels we removed last time
+                    Width += _collapsedPanelWidth;
+                }
+            }
+            else
+            {
+                // --- HIDING ---
+
+                // 1. Capture State (Memory!)
+                // Save the current ratio so we don't reset to default later
+                _lastSettingsColumnWidth = settingsCol.Width;
+
+                // Calculate total pixels to remove (Splitter + Settings Panel)
+                double totalWidthToRemove = splitterCol.ActualWidth + settingsCol.ActualWidth;
+
+                // Save this value so we can restore the window size later
+                // (Guard against 0 to prevent shrinking window to nothing on rapid toggles)
+                if (totalWidthToRemove > 10)
+                {
+                    _collapsedPanelWidth = totalWidthToRemove;
+                }
+
+                // 2. Collapse Columns
+                splitterCol.Width = new GridLength(0);
+                settingsCol.Width = new GridLength(0);
+
+                _toggleSettingsMenuItem.Header = "_Show Settings Panel";
+
+                // 3. Resize the Window (only if not maximized)
+                if (WindowState == System.Windows.WindowState.Normal)
+                {
+                    Width -= _collapsedPanelWidth;
+                }
+            }
+        }
+
+        private void ResetCustomColorsToDefault()
+        {
+            var result = MessageBox.Show(
+                "This will reset the custom color palette in the color picker to the default.\n\n" +
+                "Your current custom colors will be lost. Continue?",
+                "Reset Custom Colors",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                Settings.CustomColors = new int[16]
+                {
+                    0x1B5E20, // Forest Green (dark felt green)
+                    0x2E7D32, // Medium Green
+                    0x4CAF50, // Bright Green
+                    0x81C784, // Light Green
+                    0x8B4513, // Saddle Brown (wood)
+                    0xA0522D, // Sienna Brown
+                    0xD2691E, // Rich Brown
+                    0xF4A460, // Sandy Brown
+                    0x212121, // Near Black
+                    0x424242, // Dark Gray
+                    0x757575, // Medium Gray
+                    0xBDBDBD, // Light Gray
+                    0xFFD700, // Gold (ranking accent)
+                    0xB71C1C, // Deep Red
+                    0x1565C0, // Rich Blue
+                    0xF5F5F5  // Off White
+                };
+
+                SaveSettings();
+
+
+            }
         }
 
         private void ExportRankingsToCSV_Click(object sender, RoutedEventArgs e)
@@ -1099,7 +1296,7 @@ namespace BilliardsRankingsManager
             textStack.Children.Add(CreateColorSetting("Player Text Color:",
                 () => Settings.PlayerTextColor,
                 c => { Settings.PlayerTextColor = c; SaveSettings(); ScheduleRefresh(); }));
-            textStack.Children.Add(CreateColorSetting("Rank Number Color:",
+            textStack.Children.Add(CreateColorSetting("Player Rank Color:",
                 () => Settings.RankNumberColor,
                 c => { Settings.RankNumberColor = c; SaveSettings(); ScheduleRefresh(); }));
 
@@ -1443,9 +1640,10 @@ namespace BilliardsRankingsManager
 
         private StackPanel CreateColorSetting(string label, Func<string> getCurrentColor, Action<string> onChange)
         {
+            // Use a Grid for the main layout to better control vertical alignment
             var panel = new StackPanel { Margin = new Thickness(0, 5, 0, 5), Orientation = Orientation.Horizontal };
 
-            // Label
+            // 1. Main Label
             var labelText = new TextBlock
             {
                 Text = label,
@@ -1455,74 +1653,140 @@ namespace BilliardsRankingsManager
             };
             panel.Children.Add(labelText);
 
-            // Preview Box (clickable)
+            // 2. THE PREVIEW BOX
+            // We create the inner grid (Checkerboard + Color) first
+            var previewContentGrid = new Grid();
+
+            // Layer A: Checkerboard (Always visible)
+            var checkerboard = new DrawingBrush
+            {
+                TileMode = TileMode.Tile,
+                Viewport = new Rect(0, 0, 10, 10),
+                ViewportUnits = BrushMappingMode.Absolute,
+                Drawing = new GeometryDrawing
+                {
+                    Brush = Brushes.LightGray,
+                    Geometry = new GeometryGroup
+                    {
+                        Children = new GeometryCollection
+                {
+                    new RectangleGeometry(new Rect(0, 0, 5, 5)),
+                    new RectangleGeometry(new Rect(5, 5, 5, 5))
+                }
+                    }
+                }
+            };
+            var checkerboardLayer = new Border { Background = checkerboard };
+            previewContentGrid.Children.Add(checkerboardLayer);
+
+            // Layer B: The Color Layer (Alpha changes here)
+            var colorLayer = new Border();
+            previewContentGrid.Children.Add(colorLayer);
+
+            // The Container Border (Acts like the Button)
             var previewBox = new Border
             {
-                Width = 80,
-                Height = 30,
+                Child = previewContentGrid,
+                Width = 26, // Slightly wider, less tall
+                Height = 26, // Standard button height
                 BorderBrush = new SolidColorBrush(Color.FromRgb(180, 180, 180)),
                 BorderThickness = new Thickness(1),
+                Padding = new Thickness(1), // JITTER FIX: Start with 1px padding
                 CornerRadius = new CornerRadius(3),
-                Cursor = Cursors.Hand
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 15, 0) // Space between box and slider
             };
 
-            // Helper to update preview
+            // 3. OPACITY SECTION
+            // Using a Grid to place text exactly above the slider
+            var opacityGrid = new Grid { VerticalAlignment = VerticalAlignment.Center };
+            opacityGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Row 0: Text
+            opacityGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Row 1: Slider
+
+            // The Text (Top Right)
+            var opacityTextLabel = new TextBlock
+            {
+                Text = "Opacity 100%",
+                FontSize = 11,
+                FontWeight = FontWeights.Bold, // "Dark Black" feel
+                Foreground = Brushes.Black,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 0, 2, 0) // Align with end of slider
+            };
+            Grid.SetRow(opacityTextLabel, 0);
+
+            // The Slider (Bottom)
+            var opacitySlider = new Slider
+            {
+                Minimum = 0,
+                Maximum = 100,
+                Value = 100,
+                Width = 140,
+                VerticalAlignment = VerticalAlignment.Top,
+                IsSnapToTickEnabled = true,
+                TickFrequency = 1
+            };
+            Grid.SetRow(opacitySlider, 1);
+
+            opacityGrid.Children.Add(opacityTextLabel);
+            opacityGrid.Children.Add(opacitySlider);
+
+
+            // --- LOGIC ---
+
             Action updatePreview = () =>
             {
                 try
                 {
-                    var currentColor = getCurrentColor(); // Read fresh value each time
+                    var currentColor = getCurrentColor();
+
                     if (currentColor.Equals("transparent", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Checkerboard pattern
-                        var checkerboard = new DrawingBrush
-                        {
-                            TileMode = TileMode.Tile,
-                            Viewport = new Rect(0, 0, 10, 10),
-                            ViewportUnits = BrushMappingMode.Absolute,
-                            Drawing = new GeometryDrawing
-                            {
-                                Brush = Brushes.LightGray,
-                                Geometry = new GeometryGroup
-                                {
-                                    Children = new GeometryCollection
-                            {
-                                new RectangleGeometry(new Rect(0, 0, 5, 5)),
-                                new RectangleGeometry(new Rect(5, 5, 5, 5))
-                            }
-                                }
-                            }
-                        };
-                        previewBox.Background = checkerboard;
+                        colorLayer.Background = Brushes.Transparent;
+                        opacitySlider.Value = 0;
+                        opacityTextLabel.Text = "Opacity 0%";
                     }
                     else
                     {
                         var color = (Color)ColorConverter.ConvertFromString(currentColor);
-                        previewBox.Background = new SolidColorBrush(color);
+
+                        int opacityPercent = (int)Math.Round((color.A / 255.0) * 100);
+
+                        // Only update slider if significantly different to prevent loop fighting
+                        if (Math.Abs(opacitySlider.Value - opacityPercent) > 1)
+                            opacitySlider.Value = opacityPercent;
+
+                        opacityTextLabel.Text = $"Opacity {opacityPercent}%";
+                        colorLayer.Background = new SolidColorBrush(color);
                     }
                 }
                 catch
                 {
-                    previewBox.Background = Brushes.White;
+                    colorLayer.Background = Brushes.White;
                 }
             };
 
+            // Initialize
             updatePreview();
 
-            // Hover effects
+            // --- EVENTS ---
+
+            // 1. JITTER-FREE HOVER EFFECT
             previewBox.MouseEnter += (s, e) =>
             {
-                previewBox.BorderBrush = new SolidColorBrush(Color.FromRgb(100, 100, 100));
-                previewBox.BorderThickness = new Thickness(2);
+                previewBox.BorderBrush = Brushes.Gray; // Darker border
+                previewBox.BorderThickness = new Thickness(2); // Thicker line
+                previewBox.Padding = new Thickness(0); // Remove padding so size stays constant
             };
 
             previewBox.MouseLeave += (s, e) =>
             {
                 previewBox.BorderBrush = new SolidColorBrush(Color.FromRgb(180, 180, 180));
-                previewBox.BorderThickness = new Thickness(1);
+                previewBox.BorderThickness = new Thickness(1); // Thinner line
+                previewBox.Padding = new Thickness(1); // Add padding back
             };
 
-            // Click opens WinForms color picker
+            // 2. Click Logic (WinForms Dialog)
             previewBox.MouseLeftButtonDown += (s, e) =>
             {
                 var dialog = new System.Windows.Forms.ColorDialog
@@ -1532,52 +1796,68 @@ namespace BilliardsRankingsManager
                     CustomColors = Settings.CustomColors
                 };
 
-                // Set current color - now reading fresh value
                 try
                 {
                     var currentColor = getCurrentColor();
                     if (!currentColor.Equals("transparent", StringComparison.OrdinalIgnoreCase))
                     {
                         var wpfColor = (Color)ColorConverter.ConvertFromString(currentColor);
-                        dialog.Color = System.Drawing.Color.FromArgb(wpfColor.R, wpfColor.G, wpfColor.B); // Note: removed alpha
+                        dialog.Color = System.Drawing.Color.FromArgb(wpfColor.R, wpfColor.G, wpfColor.B);
                     }
                 }
-                catch (Exception ex)
-                {
-                    // If conversion fails, dialog will open to default color
-                    System.Diagnostics.Debug.WriteLine($"Color conversion error: {ex.Message}");
-                }
+                catch { }
 
                 if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 {
-                    // Convert back to WPF color with full opacity (alpha = 255)
-                    var wpfColor = Color.FromArgb(255, dialog.Color.R, dialog.Color.G, dialog.Color.B);
+                    byte alpha = (byte)Math.Round((opacitySlider.Value / 100.0) * 255);
+                    var wpfColor = Color.FromArgb(alpha, dialog.Color.R, dialog.Color.G, dialog.Color.B);
+
                     onChange(wpfColor.ToString());
+                    Settings.CustomColors = dialog.CustomColors;
+                    SaveSettings();
                     updatePreview();
                 }
-
-                // Save custom colors
-                Settings.CustomColors = dialog.CustomColors;
-                SaveSettings();
             };
 
-            // Transparent button
-            var transparentBtn = new Button
+            // 3. Slider Logic
+            opacitySlider.ValueChanged += (s, e) =>
             {
-                Content = "Transparent",
-                Width = 110,
-                Height = 25,
-                Margin = new Thickness(5, 0, 0, 0)
+                int opacityPercent = (int)opacitySlider.Value;
+                opacityTextLabel.Text = $"Opacity {opacityPercent}%";
+
+                // Logic to update the actual color string
+                try
+                {
+                    var currentColor = getCurrentColor();
+                    byte alpha = (byte)Math.Round((opacityPercent / 100.0) * 255);
+
+                    if (opacityPercent == 0)
+                    {
+                        onChange("Transparent");
+                    }
+                    else
+                    {
+                        // If currently transparent, assume White base, otherwise use current RGB
+                        Color baseColor = Colors.White;
+
+                        if (!currentColor.Equals("transparent", StringComparison.OrdinalIgnoreCase))
+                        {
+                            baseColor = (Color)ColorConverter.ConvertFromString(currentColor);
+                        }
+
+                        var newColor = Color.FromArgb(alpha, baseColor.R, baseColor.G, baseColor.B);
+                        onChange(newColor.ToString());
+                    }
+
+                    // Visual update only (don't call full updatePreview to avoid recursion on slider)
+                    colorLayer.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(getCurrentColor()));
+                }
+                catch { }
             };
 
-            transparentBtn.Click += (s, e) =>
-            {
-                onChange("Transparent");
-                updatePreview();
-            };
-
+            // Add to main panel
             panel.Children.Add(previewBox);
-            panel.Children.Add(transparentBtn);
+            panel.Children.Add(opacityGrid);
 
             return panel;
         }
