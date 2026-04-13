@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet --version)",
+      "Bash(dotnet sdk:*)",
+      "Read(//c/Users/shane.springer/source/repos/BilliardsRankingsManager/**)"
+    ]
+  }
+}

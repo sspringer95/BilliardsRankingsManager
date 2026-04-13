@@ -868,7 +868,9 @@ namespace BilliardsRankingsManager
 
 
 
-        private List<Button> _downButtons = new List<Button>();
+        private List<Button> _swapButtons = new List<Button>();
+        private int? _pendingSwapIndex = null;
+        private TextBlock _swapBanner;
 
         private ScrollViewer CreateRankingsPanel()
         {
@@ -966,9 +968,23 @@ namespace BilliardsRankingsManager
 
             stack.Children.Add(titlePanel);
 
+            _swapBanner = new TextBlock
+            {
+                Text = "Click ⇅ Select next to a player to begin a swap.",
+                FontSize = 12,
+                FontStyle = FontStyles.Italic,
+                Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
+                Background = Brushes.Transparent,
+                Padding = new Thickness(8, 4, 8, 4),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8),
+                Height = 40
+            };
+            stack.Children.Add(_swapBanner);
+
             // Clear previous entries
             _rankingEntryGrids.Clear();
-            _downButtons.Clear();
+            _swapButtons.Clear();
 
             // Create 50 ranking entries
             for (int i = 0; i < 50; i++)
@@ -1000,45 +1016,25 @@ namespace BilliardsRankingsManager
                 });
                 Grid.SetColumn(nameBox, 1);
 
-                // Up/Down buttons
-                var buttonPanel = new StackPanel { Orientation = Orientation.Horizontal };
-
                 int index = i;
 
-                var upBtn = new Button
+                var swapBtn = new Button
                 {
-                    Content = "▲",
-                    Width = 22,
+                    Content = "⇅ Select",
+                    Width = 85,
                     Height = 22,
                     FontSize = 10,
                     Padding = new Thickness(0),
-                    Margin = new Thickness(0, 0, 2, 0),
-                    IsEnabled = i > 0,
                     IsTabStop = false
                 };
-                upBtn.Click += (s, e) => SwapRankings(index, index - 1);
+                swapBtn.Click += (s, e) => HandleSwapClick(index);
 
-                var downBtn = new Button
-                {
-                    Content = "▼",
-                    Width = 22,
-                    Height = 22,
-                    FontSize = 10,
-                    Padding = new Thickness(0),
-                    IsEnabled = i < Settings.PlayerCount - 1,
-                    IsTabStop = false
-                };
-                downBtn.Click += (s, e) => SwapRankings(index, index + 1);
-
-                _downButtons.Add(downBtn);
-
-                buttonPanel.Children.Add(upBtn);
-                buttonPanel.Children.Add(downBtn);
-                Grid.SetColumn(buttonPanel, 2);
+                _swapButtons.Add(swapBtn);
+                Grid.SetColumn(swapBtn, 2);
 
                 entryGrid.Children.Add(rankLabel);
                 entryGrid.Children.Add(nameBox);
-                entryGrid.Children.Add(buttonPanel);
+                entryGrid.Children.Add(swapBtn);
 
                 // Set initial visibility
                 entryGrid.Visibility = i < Settings.PlayerCount ? Visibility.Visible : Visibility.Collapsed;
@@ -1057,16 +1053,78 @@ namespace BilliardsRankingsManager
         private List<Grid> _rankingEntryGrids = new List<Grid>();
         private void UpdateVisibleRankings()
         {
+            // Cancel any pending swap when the list size changes
+            _pendingSwapIndex = null;
+            RefreshSwapState();
+
             for (int i = 0; i < _rankingEntryGrids.Count; i++)
             {
                 _rankingEntryGrids[i].Visibility = i < Settings.PlayerCount
                     ? Visibility.Visible
                     : Visibility.Collapsed;
+            }
+        }
 
-                // Update down button enabled state
-                if (i < _downButtons.Count)
+        private void HandleSwapClick(int index)
+        {
+            if (_pendingSwapIndex == null)
+            {
+                // First click: select this player
+                _pendingSwapIndex = index;
+            }
+            else if (_pendingSwapIndex == index)
+            {
+                // Same player clicked again: cancel
+                _pendingSwapIndex = null;
+            }
+            else
+            {
+                // Second click on a different player: execute swap
+                SwapRankings(_pendingSwapIndex.Value, index);
+                _pendingSwapIndex = null;
+            }
+
+            RefreshSwapState();
+        }
+
+        private void RefreshSwapState()
+        {
+            bool pending = _pendingSwapIndex.HasValue;
+
+            if (pending)
+            {
+                var name = Rankings[_pendingSwapIndex!.Value].PlayerName;
+                var display = string.IsNullOrWhiteSpace(name) ? $"#{_pendingSwapIndex.Value + 1}" : name;
+                _swapBanner.Text = $"Swapping {display} — click ↔ Swap next to another player, or cancel.";
+                _swapBanner.Foreground = new SolidColorBrush(Color.FromRgb(100, 60, 0));
+                _swapBanner.Background = new SolidColorBrush(Color.FromRgb(255, 236, 179));
+            }
+            else
+            {
+                _swapBanner.Text = "Click ⇅ Select next to a player to begin a swap.";
+                _swapBanner.Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120));
+                _swapBanner.Background = Brushes.Transparent;
+            }
+
+            for (int i = 0; i < _swapButtons.Count; i++)
+            {
+                var btn = _swapButtons[i];
+                var grid = _rankingEntryGrids[i];
+
+                if (!pending)
                 {
-                    _downButtons[i].IsEnabled = i < Settings.PlayerCount - 1;
+                    btn.Content = "⇅ Select";
+                    grid.Background = Brushes.Transparent;
+                }
+                else if (i == _pendingSwapIndex.Value)
+                {
+                    btn.Content = "✕ Cancel";
+                    grid.Background = new SolidColorBrush(Color.FromRgb(255, 236, 179));
+                }
+                else
+                {
+                    btn.Content = "↔ Swap";
+                    grid.Background = Brushes.Transparent;
                 }
             }
         }
@@ -2552,21 +2610,41 @@ namespace BilliardsRankingsManager
 
         private void RebuildSettingsPanel()
         {
-            if (Content is DockPanel dockPanel)
+            // Use the class field _mainGrid if you have it, otherwise find it via DockPanel
+            var mainGrid = _mainGrid;
+
+            if (mainGrid == null && Content is DockPanel dockPanel)
             {
-                // Find the main grid (it's a child of the DockPanel)
-                var mainGrid = dockPanel.Children.OfType<Grid>().FirstOrDefault();
+                mainGrid = dockPanel.Children.OfType<Grid>().FirstOrDefault();
+            }
 
-                if (mainGrid != null && mainGrid.Children.Count >= 2)
+            if (mainGrid != null)
+            {
+                // 1. Find the specific element sitting in Column 2 (The Settings Panel)
+                UIElement oldSettingsPanel = null;
+                foreach (UIElement child in mainGrid.Children)
                 {
-                    // Remove old settings panel (right column, index 1)
-                    mainGrid.Children.RemoveAt(1);
-
-                    // Create new settings panel
-                    var newSettingsPanel = CreateSettingsPanel();
-                    Grid.SetColumn(newSettingsPanel, 1);
-                    mainGrid.Children.Add(newSettingsPanel);
+                    if (Grid.GetColumn(child) == 2)
+                    {
+                        oldSettingsPanel = child;
+                        break;
+                    }
                 }
+
+                // 2. Remove it safely
+                if (oldSettingsPanel != null)
+                {
+                    mainGrid.Children.Remove(oldSettingsPanel);
+                }
+
+                // 3. Create the new panel
+                var newSettingsPanel = CreateSettingsPanel();
+
+                // 4. Put it in COLUMN 2 (The Settings Column)
+                Grid.SetColumn(newSettingsPanel, 2);
+
+                // 5. Add it back to the grid
+                mainGrid.Children.Add(newSettingsPanel);
             }
         }
 
